@@ -8,6 +8,9 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 
+import { normalizeFooterConfig } from "../../src/config.js"
+import { installFooter } from "../../src/footer.js"
+
 const EXTENSION_PATH = resolve("index.js")
 
 function encodeBase64Url(value) {
@@ -324,6 +327,92 @@ close
   }
 }
 
+function renderFooterWithPosition(footerPosition, width = 80) {
+  let footerFactory
+  const state = {
+    footerConfig: {
+      quotaWindow: "weekly",
+      displayMode: "used",
+      footerPosition,
+    },
+    usageSnapshot: { weekly: { usedPercent: 42 } },
+    requestRender: () => {},
+  }
+  const ctx = {
+    model: { id: "gpt-5.5", provider: "openai-codex" },
+    getContextUsage: () => ({ contextWindow: 128000, percent: 10 }),
+    modelRegistry: { isUsingOAuth: () => true },
+    sessionManager: {
+      getEntries: () => [],
+      getCwd: () => "/project",
+      getSessionName: () => undefined,
+    },
+    ui: {
+      setFooter(factory) {
+        footerFactory = factory
+      },
+    },
+  }
+  const pi = { getThinkingLevel: () => "off" }
+
+  installFooter(pi, ctx, state)
+  const footer = footerFactory(
+    { requestRender() {} },
+    { fg: (_color, text) => text },
+    {
+      getGitBranch: () => undefined,
+      getAvailableProviderCount: () => 1,
+      onBranchChange: () => undefined,
+    },
+  )
+  return footer.render(width)
+}
+
+test("footer position configuration accepts all supported values", () => {
+  for (const footerPosition of ["first", "second", "third"]) {
+    assert.equal(
+      normalizeFooterConfig({ footerPosition }).footerPosition,
+      footerPosition,
+    )
+  }
+
+  assert.equal(normalizeFooterConfig({}).footerPosition, "second")
+  assert.equal(
+    normalizeFooterConfig({ footerPosition: "invalid" }).footerPosition,
+    "second",
+  )
+})
+
+test("footer supports all configured line positions", async (t) => {
+  await t.test("first line", () => {
+    const lines = renderFooterWithPosition("first")
+
+    assert.equal(lines.length, 2)
+    assert.match(lines[0], /W 42%$/)
+    assert.equal(lines[0].length, 80)
+    assert.doesNotMatch(lines[1], /W 42%/)
+  })
+
+  await t.test("second line", () => {
+    const lines = renderFooterWithPosition("second")
+
+    assert.equal(lines.length, 2)
+    assert.doesNotMatch(lines[0], /W 42%/)
+    assert.match(lines[1], /gpt-5\.5 • W 42%$/)
+    assert.equal(lines[1].length, 80)
+  })
+
+  await t.test("third line", () => {
+    const lines = renderFooterWithPosition("third")
+
+    assert.equal(lines.length, 3)
+    assert.doesNotMatch(lines[0], /W 42%/)
+    assert.doesNotMatch(lines[1], /W 42%/)
+    assert.match(lines[2], /W 42%$/)
+    assert.equal(lines[2].length, 80)
+  })
+})
+
 test("real pi TUI renders the ChatGPT weekly percentage in the footer", async () => {
   const token = fakeJwt({
     "https://api.openai.com/auth": {
@@ -410,8 +499,12 @@ test("real pi TUI cancels footer previews and resets defaults", async () => {
   const enter = "\\r"
   const escape = "\\033"
   const displayModeMenu = `${down}${down}${enter}`
-  const resetMenu = `${down}${down}${down}${enter}`
-  const defaultConfig = { quotaWindow: "weekly", displayMode: "used" }
+  const resetMenu = `${down}${down}${down}${down}${enter}`
+  const defaultConfig = {
+    quotaWindow: "weekly",
+    displayMode: "used",
+    footerPosition: "second",
+  }
   const token = fakeJwt({
     "https://api.openai.com/auth": { chatgpt_account_id: "acct_reset" },
   })
@@ -457,10 +550,12 @@ ${expectBlock("ChatGPT footer settings reset to defaults.")}`,
 })
 
 test("real pi TUI previews and saves footer display configuration options", async (t) => {
+  const up = "\\033\\[A"
   const down = "\\033\\[B"
   const enter = "\\r"
   const displayModeMenu = `${down}${down}${enter}`
   const footerLimitMenu = `${down}${enter}`
+  const footerPositionMenu = `${down}${down}${down}${enter}`
   const cases = [
     {
       name: "5-hour limit",
@@ -468,7 +563,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       optionKeys: `${down}${enter}`,
       submenuText: "Display which ChatGPT limit in footer?",
       expectText: "ChatGPT footer display: 5-hour usage",
-      expectedConfig: { quotaWindow: "fiveHour", displayMode: "used" },
+      expectedConfig: {
+        quotaWindow: "fiveHour",
+        displayMode: "used",
+        footerPosition: "second",
+      },
     },
     {
       name: "both 5-hour and weekly limits",
@@ -476,7 +575,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       optionKeys: `${down}${down}${enter}`,
       submenuText: "Display which ChatGPT limit in footer?",
       expectText: "ChatGPT footer display: Both 5-hour and weekly",
-      expectedConfig: { quotaWindow: "both", displayMode: "used" },
+      expectedConfig: {
+        quotaWindow: "both",
+        displayMode: "used",
+        footerPosition: "second",
+      },
     },
     {
       name: "hidden footer limit",
@@ -485,7 +588,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       submenuText: "Display which ChatGPT limit in footer?",
       expectText:
         "ChatGPT footer display: Hide usage from footer (usage hidden).",
-      expectedConfig: { quotaWindow: "hidden", displayMode: "used" },
+      expectedConfig: {
+        quotaWindow: "hidden",
+        displayMode: "used",
+        footerPosition: "second",
+      },
     },
     {
       name: "used percent with reset",
@@ -494,7 +601,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       submenuText: "How should the footer value be shown?",
       expectText:
         "ChatGPT footer mode: Used percent with reset, e.g. W 42% · ~2d",
-      expectedConfig: { quotaWindow: "weekly", displayMode: "compact" },
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "compact",
+        footerPosition: "second",
+      },
     },
     {
       name: "pace percent with state",
@@ -503,7 +614,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       submenuText: "How should the footer value be shown?",
       expectText:
         "ChatGPT footer mode: Pace percent with state, e.g. WP 13% (reserve)",
-      expectedConfig: { quotaWindow: "weekly", displayMode: "pace" },
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "pace",
+        footerPosition: "second",
+      },
     },
     {
       name: "pace percent",
@@ -511,7 +626,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       optionKeys: `${down}${down}${down}${enter}`,
       submenuText: "How should the footer value be shown?",
       expectText: "ChatGPT footer mode: Pace percent, e.g. WP -13%",
-      expectedConfig: { quotaWindow: "weekly", displayMode: "paceCompact" },
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "paceCompact",
+        footerPosition: "second",
+      },
     },
     {
       name: "pace percent with reset",
@@ -523,6 +642,7 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       expectedConfig: {
         quotaWindow: "weekly",
         displayMode: "paceResetCompact",
+        footerPosition: "second",
       },
     },
     {
@@ -531,7 +651,11 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       optionKeys: `${down}${down}${down}${down}${down}${enter}`,
       submenuText: "How should the footer value be shown?",
       expectText: "ChatGPT footer mode: Remaining percent, e.g. W 58% left",
-      expectedConfig: { quotaWindow: "weekly", displayMode: "remaining" },
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "remaining",
+        footerPosition: "second",
+      },
     },
     {
       name: "remaining percent with reset",
@@ -543,6 +667,31 @@ test("real pi TUI previews and saves footer display configuration options", asyn
       expectedConfig: {
         quotaWindow: "weekly",
         displayMode: "remainingCompact",
+        footerPosition: "second",
+      },
+    },
+    {
+      name: "first footer line",
+      mainKeys: footerPositionMenu,
+      optionKeys: `${up}${enter}`,
+      submenuText: "Where should the ChatGPT limit be shown?",
+      expectText: "ChatGPT footer position: First line, right aligned",
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "used",
+        footerPosition: "first",
+      },
+    },
+    {
+      name: "third footer line",
+      mainKeys: footerPositionMenu,
+      optionKeys: `${down}${enter}`,
+      submenuText: "Where should the ChatGPT limit be shown?",
+      expectText: "ChatGPT footer position: Third line, right aligned",
+      expectedConfig: {
+        quotaWindow: "weekly",
+        displayMode: "used",
+        footerPosition: "third",
       },
     },
   ]

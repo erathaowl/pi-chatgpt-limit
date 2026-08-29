@@ -54,6 +54,7 @@ The `/chatgpt-limit` menu also configures the footer display:
 
 - show weekly usage (default), 5-hour usage, both, or hide usage
 - show used percent, used percent with reset, remaining percent, or remaining percent with reset
+- place usage right-aligned on the first line, right-aligned on the second line (default), or right-aligned on a new third line
 - reset footer settings to defaults
 
 Examples:
@@ -64,7 +65,17 @@ Examples:
 - `W 58% left · ~2d`
 - `5h 25% / W 42%`
 
-Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same footer preference applies across pi sessions.
+Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same footer preference applies across pi sessions. The file uses this structure:
+
+```json
+{
+  "quotaWindow": "weekly",
+  "displayMode": "used",
+  "footerPosition": "second"
+}
+```
+
+Set `footerPosition` to `first`, `second`, or `third`. Invalid or missing values fall back to `second`.
 
 ## Notes
 

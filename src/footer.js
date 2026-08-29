@@ -87,6 +87,18 @@ function formatFooterUsage(state, theme) {
   return parts.length > 0 ? parts.join(theme.fg("dim", " / ")) : undefined
 }
 
+function alignRight(left, right, width, leftEllipsis = "") {
+  const fittedRight = truncateToWidth(right, width, "")
+  const rightWidth = visibleWidth(fittedRight)
+  const availableForLeft = Math.max(0, width - rightWidth - 2)
+  const fittedLeft =
+    visibleWidth(left) > availableForLeft
+      ? truncateToWidth(left, availableForLeft, leftEllipsis)
+      : left
+  const padding = Math.max(0, width - visibleWidth(fittedLeft) - rightWidth)
+  return fittedLeft + " ".repeat(padding) + fittedRight
+}
+
 function renderFooter(pi, ctx, state, footerData, theme, width) {
   const model = ctx.model
 
@@ -156,11 +168,11 @@ function renderFooter(pi, ctx, state, footerData, theme, width) {
         : `${modelName} • ${thinkingLevel}`
   }
 
-  if (isOpenAICodexProvider(model?.provider)) {
-    const footerUsage = formatFooterUsage(state, theme)
-    if (footerUsage) {
-      rightSideWithoutProvider += ` • ${footerUsage}`
-    }
+  const footerUsage = isOpenAICodexProvider(model?.provider)
+    ? formatFooterUsage(state, theme)
+    : undefined
+  if (footerUsage && state.footerConfig.footerPosition === "second") {
+    rightSideWithoutProvider += ` • ${footerUsage}`
   }
 
   let rightSide = rightSideWithoutProvider
@@ -193,13 +205,21 @@ function renderFooter(pi, ctx, state, footerData, theme, width) {
     }
   }
 
-  const pwdLine = truncateToWidth(
-    theme.fg("dim", pwd),
-    width,
-    theme.fg("dim", "..."),
-  )
+  const pwdEllipsis = theme.fg("dim", "...")
+  let pwdLine = truncateToWidth(theme.fg("dim", pwd), width, pwdEllipsis)
+  if (footerUsage && state.footerConfig.footerPosition === "first") {
+    pwdLine = alignRight(pwdLine, footerUsage, width, pwdEllipsis)
+  }
+
   const remainder = statsLine.slice(statsLeft.length)
-  return [pwdLine, theme.fg("dim", statsLeft) + theme.fg("dim", remainder)]
+  const lines = [
+    pwdLine,
+    theme.fg("dim", statsLeft) + theme.fg("dim", remainder),
+  ]
+  if (footerUsage && state.footerConfig.footerPosition === "third") {
+    lines.push(alignRight("", footerUsage, width))
+  }
+  return lines
 }
 
 /** @param {import('@earendil-works/pi-coding-agent').ExtensionContext} ctx */

@@ -12,6 +12,7 @@ export const CONFIG_FILE_NAME = "chatgpt-limit.json"
 export const DEFAULT_FOOTER_CONFIG = {
   quotaWindow: "weekly",
   displayMode: "used",
+  footerPosition: "second",
 }
 
 export const QUOTA_WINDOW_OPTIONS = [
@@ -19,6 +20,12 @@ export const QUOTA_WINDOW_OPTIONS = [
   { label: "5-hour usage", value: "fiveHour" },
   { label: "Both 5-hour and weekly", value: "both" },
   { label: "Hide usage from footer", value: "hidden" },
+]
+
+export const FOOTER_POSITION_OPTIONS = [
+  { label: "First line, right aligned", value: "first" },
+  { label: "Second line, right aligned (default)", value: "second" },
+  { label: "Third line, right aligned", value: "third" },
 ]
 
 export const DISPLAY_MODE_OPTIONS = [

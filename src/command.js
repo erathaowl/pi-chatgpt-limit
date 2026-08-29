@@ -3,6 +3,7 @@ import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui"
 import {
   DEFAULT_FOOTER_CONFIG,
   DISPLAY_MODE_OPTIONS,
+  FOOTER_POSITION_OPTIONS,
   QUOTA_WINDOW_OPTIONS,
 } from "./constants.js"
 import {
@@ -147,10 +148,33 @@ async function configureDisplayMode(ctx, state) {
   ctx.ui.notify(`ChatGPT footer mode: ${selected.label}`, "info")
 }
 
+async function configureFooterPosition(ctx, state) {
+  const selected = await selectFooterConfigOption(
+    ctx,
+    state,
+    "Where should the ChatGPT limit be shown?",
+    FOOTER_POSITION_OPTIONS,
+    state.footerConfig.footerPosition,
+    (footerPosition) => {
+      state.footerConfig = normalizeFooterConfig({
+        ...state.footerConfig,
+        footerPosition,
+      })
+    },
+  )
+  if (!selected) return
+
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    footerPosition: selected.value,
+  })
+  ctx.ui.notify(`ChatGPT footer position: ${selected.label}`, "info")
+}
+
 async function resetFooterConfig(ctx, state) {
   const confirmed = await ctx.ui.confirm(
     "Reset ChatGPT footer settings?",
-    "This restores the default footer display: weekly usage, used percent.",
+    "This restores the default footer display: weekly usage, used percent, on the second line.",
   )
   if (!confirmed) return
 
@@ -166,11 +190,17 @@ export function registerChatGptLimitCommand(pi, state, queueUpdate) {
         "Show current usage details",
         `Configure footer limit (${describeFooterConfig(state.footerConfig)})`,
         "Configure footer display mode",
+        "Configure footer position",
         "Reset footer settings to defaults",
       ])
 
       if (action === "Configure footer display mode") {
         await configureDisplayMode(ctx, state)
+        return
+      }
+
+      if (action === "Configure footer position") {
+        await configureFooterPosition(ctx, state)
         return
       }
 

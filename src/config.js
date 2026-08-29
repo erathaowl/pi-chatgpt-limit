@@ -7,6 +7,7 @@ import {
   CONFIG_FILE_NAME,
   DEFAULT_FOOTER_CONFIG,
   DISPLAY_MODE_OPTIONS,
+  FOOTER_POSITION_OPTIONS,
   QUOTA_WINDOW_OPTIONS,
 } from "./constants.js"
 import { asRecord } from "./records.js"
@@ -27,7 +28,14 @@ export function normalizeFooterConfig(value) {
       ? rawDisplayMode
       : DEFAULT_FOOTER_CONFIG.displayMode
 
-  return { quotaWindow, displayMode }
+  const rawFooterPosition = record?.footerPosition
+  const footerPosition =
+    typeof rawFooterPosition === "string" &&
+    FOOTER_POSITION_OPTIONS.some((option) => option.value === rawFooterPosition)
+      ? rawFooterPosition
+      : DEFAULT_FOOTER_CONFIG.footerPosition
+
+  return { quotaWindow, displayMode, footerPosition }
 }
 
 function getConfigPath() {
@@ -76,7 +84,10 @@ export function describeFooterConfig(footerConfig) {
   const displayMode = DISPLAY_MODE_OPTIONS.find(
     (option) => option.value === footerConfig.displayMode,
   )
-  return `${quotaWindow?.label || "Weekly usage"}; ${displayMode?.label || "Used percent"}`
+  const footerPosition = FOOTER_POSITION_OPTIONS.find(
+    (option) => option.value === footerConfig.footerPosition,
+  )
+  return `${quotaWindow?.label || "Weekly usage"}; ${displayMode?.label || "Used percent"}; ${footerPosition?.label || "Second line, right aligned"}`
 }
 
 export async function saveFooterConfig(state, nextConfig) {
