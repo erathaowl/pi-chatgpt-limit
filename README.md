@@ -15,13 +15,7 @@ Footer display variants and color thresholds:
 ## Install
 
 ```sh
-pi install npm:pi-chatgpt-limit
-```
-
-Or shorthand:
-
-```sh
-pi install pi-chatgpt-limit
+pi install git:https://github.com/erathaowl/pi-chatgpt-limit
 ```
 
 Then reload pi:
@@ -91,11 +85,11 @@ Extensions run with local user permissions and can access pi auth storage. Revie
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/patlux/pi-chatgpt-limit/blob/main/CONTRIBUTING.md) for development setup, PR expectations, and commit message guidance.
+See [CONTRIBUTING.md](https://github.com/erathaowl/pi-chatgpt-limit/blob/main/CONTRIBUTING.md) for development setup, PR expectations, and commit message guidance.
 
 ## Release
 
-See [RELEASE.md](https://github.com/patlux/pi-chatgpt-limit/blob/main/RELEASE.md) for the release checklist, GitHub release publishing, npm verification, and announcement steps.
+See [RELEASE.md](https://github.com/erathaowl/pi-chatgpt-limit/blob/main/RELEASE.md) for the release checklist, GitHub release publishing, npm verification, and announcement steps.
 
 ## License
 
