@@ -11,6 +11,7 @@ export const CONFIG_FILE_NAME = "chatgpt-limit.json"
 
 export const DEFAULT_STANDARD_FOOTER_CONFIG = {
   mode: "default",
+  showForOtherProviders: false,
   workingDirectory: true,
   gitBranch: true,
   sessionName: true,

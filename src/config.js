@@ -24,7 +24,16 @@ export function normalizeStandardFooterConfig(value) {
     ? rawMode
     : DEFAULT_STANDARD_FOOTER_CONFIG.mode
 
-  const config = { ...DEFAULT_STANDARD_FOOTER_CONFIG, mode }
+  const showForOtherProviders =
+    typeof record?.showForOtherProviders === "boolean"
+      ? record.showForOtherProviders
+      : DEFAULT_STANDARD_FOOTER_CONFIG.showForOtherProviders
+
+  const config = {
+    ...DEFAULT_STANDARD_FOOTER_CONFIG,
+    mode,
+    showForOtherProviders,
+  }
   for (const { value: field } of STANDARD_FOOTER_FIELD_OPTIONS) {
     if (typeof record?.[field] === "boolean") config[field] = record[field]
   }

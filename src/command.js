@@ -15,6 +15,7 @@ import {
   saveFooterConfig,
 } from "./config.js"
 import { isOpenAICodexProvider } from "./auth.js"
+import { syncFooter } from "./footer.js"
 import { buildUsageDetails } from "./usage.js"
 
 async function selectFooterConfigOption(
@@ -190,6 +191,33 @@ async function resetFooterConfig(ctx, state) {
   ctx.ui.notify("ChatGPT footer settings reset to defaults.", "info")
 }
 
+async function configureOtherProviders(pi, ctx, state) {
+  const current = state.footerConfig.standardFooter.showForOtherProviders
+  const labels = [
+    `Disabled${!current ? " (current)" : ""}`,
+    `Enabled${current ? " (current)" : ""}`,
+  ]
+  const selected = await ctx.ui.select(
+    "Custom footer for other providers",
+    labels,
+  )
+  if (!selected) return
+
+  const enabled = selected.startsWith("Enabled")
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    standardFooter: {
+      ...state.footerConfig.standardFooter,
+      showForOtherProviders: enabled,
+    },
+  })
+  syncFooter(pi, ctx, state)
+  ctx.ui.notify(
+    `Custom footer for other providers: ${enabled ? "enabled" : "disabled"}`,
+    "info",
+  )
+}
+
 async function configureStandardFooterMode(ctx, state) {
   const currentMode = state.footerConfig.standardFooter.mode
   const labels = STANDARD_FOOTER_MODE_OPTIONS.map(
@@ -222,10 +250,12 @@ async function configureStandardFooterFields(ctx, state) {
     standardFooter: { ...state.footerConfig.standardFooter },
   })
   const originalStandardFooter = originalConfig.standardFooter
+  const showForOtherProviders = originalStandardFooter.showForOtherProviders
   const draft = {
     ...(originalStandardFooter.mode === "default"
       ? DEFAULT_STANDARD_FOOTER_CONFIG
       : originalStandardFooter),
+    showForOtherProviders,
   }
   const initialFields = { ...draft }
 
@@ -338,10 +368,10 @@ async function configureStandardFooterFields(ctx, state) {
   ctx.ui.notify("Standard footer fields updated.", "info")
 }
 
-async function resetStandardFooterConfig(ctx, state) {
+async function resetStandardFooterConfig(pi, ctx, state) {
   const confirmed = await ctx.ui.confirm(
     "Reset standard footer to Pi defaults?",
-    "This restores every standard footer field and switches to Default mode.",
+    "This restores every standard footer field, switches to Default mode, and disables the custom footer for other providers.",
   )
   if (!confirmed) return
 
@@ -349,6 +379,7 @@ async function resetStandardFooterConfig(ctx, state) {
     ...state.footerConfig,
     standardFooter: { ...DEFAULT_STANDARD_FOOTER_CONFIG },
   })
+  syncFooter(pi, ctx, state)
   ctx.ui.notify("Standard footer reset to Pi defaults.", "info")
 }
 
@@ -356,10 +387,11 @@ export function registerChatGptLimitFooterCommand(pi, state) {
   pi.registerCommand("chatgpt-limit-footer", {
     description: "Configure standard Pi footer fields",
     handler: async (_args, ctx) => {
-      const mode = state.footerConfig.standardFooter.mode
+      const standardFooter = state.footerConfig.standardFooter
       const action = await ctx.ui.select("ChatGPT limit standard footer", [
-        `Footer mode (${mode === "default" ? "Default" : "Custom"})`,
+        `Footer mode (${standardFooter.mode === "default" ? "Default" : "Custom"})`,
         "Standard footer fields",
+        `Other providers (${standardFooter.showForOtherProviders ? "Enabled" : "Disabled"})`,
         "Reset to Pi defaults",
       ])
 
@@ -367,8 +399,10 @@ export function registerChatGptLimitFooterCommand(pi, state) {
         await configureStandardFooterMode(ctx, state)
       } else if (action === "Standard footer fields") {
         await configureStandardFooterFields(ctx, state)
+      } else if (action?.startsWith("Other providers")) {
+        await configureOtherProviders(pi, ctx, state)
       } else if (action === "Reset to Pi defaults") {
-        await resetStandardFooterConfig(ctx, state)
+        await resetStandardFooterConfig(pi, ctx, state)
       }
     },
   })

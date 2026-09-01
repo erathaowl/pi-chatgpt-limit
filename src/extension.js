@@ -4,7 +4,7 @@ import {
   registerChatGptLimitFooterCommand,
 } from "./command.js"
 import { restoreFooterConfig } from "./config.js"
-import { installFooter } from "./footer.js"
+import { syncFooter } from "./footer.js"
 import { updateUsage } from "./usage.js"
 
 function createState() {
@@ -38,11 +38,14 @@ export default function (pi) {
 
   pi.on("session_start", async (_event, ctx) => {
     await restoreFooterConfig(ctx, state)
-    installFooter(pi, ctx, state)
+    syncFooter(pi, ctx, state)
     queueUpdateInBackground(ctx)
   })
 
-  pi.on("model_select", (_event, ctx) => queueUpdateInBackground(ctx))
+  pi.on("model_select", (_event, ctx) => {
+    syncFooter(pi, ctx, state)
+    queueUpdateInBackground(ctx)
+  })
   pi.on("agent_end", (_event, ctx) => queueUpdateInBackground(ctx))
 
   pi.on("session_shutdown", async () => {

@@ -14,7 +14,12 @@ import {
   STANDARD_FOOTER_FIELD_OPTIONS,
 } from "../../src/constants.js"
 import { registerChatGptLimitFooterCommand } from "../../src/command.js"
-import { installFooter } from "../../src/footer.js"
+import extension from "../../src/extension.js"
+import {
+  installFooter,
+  shouldUseCustomFooter,
+  syncFooter,
+} from "../../src/footer.js"
 
 const EXTENSION_PATH = resolve("index.js")
 
@@ -453,6 +458,7 @@ async function runStandardFooterEditor({
 function renderTestFooter({
   footerPosition = "second",
   quotaWindow = "weekly",
+  displayMode = "used",
   standardFooter,
   entries = [],
   width = 80,
@@ -463,16 +469,26 @@ function renderTestFooter({
   providerCount = 1,
   usingSubscription = true,
   contextUsage = { contextWindow: 128000, percent: 10 },
+  usageSnapshot = {
+    fiveHour: {
+      usedPercent: 25,
+      resetAt: Math.floor(Date.now() / 1000) + 60 * 60,
+    },
+    weekly: {
+      usedPercent: 42,
+      resetAt: Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60,
+    },
+  },
 } = {}) {
   let footerFactory
   const state = {
     footerConfig: normalizeFooterConfig({
       quotaWindow,
-      displayMode: "used",
+      displayMode,
       footerPosition,
       standardFooter,
     }),
-    usageSnapshot: { weekly: { usedPercent: 42 } },
+    usageSnapshot,
     requestRender: () => {},
   }
   const ctx = {
@@ -554,6 +570,74 @@ test("footer supports all configured line positions", async (t) => {
   })
 })
 
+test("quota never renders for other providers in any position", () => {
+  for (const footerPosition of ["first", "second", "third"]) {
+    for (const quotaWindow of ["weekly", "fiveHour", "both"]) {
+      const lines = renderTestFooter({
+        footerPosition,
+        quotaWindow,
+        displayMode: "compact",
+        model: { id: "qwen3-coder", provider: "other-provider" },
+        standardFooter: customStandardFooter({
+          showForOtherProviders: true,
+          model: true,
+        }),
+      })
+      const text = lines.join("\n")
+
+      assert.equal(lines.length, 2)
+      assert.match(text, /qwen3-coder/)
+      assert.doesNotMatch(text, /W 42%|5h|WP|~\d|reset/)
+    }
+  }
+})
+
+test("standard footer fields render normally for another provider", () => {
+  const allFields = Object.fromEntries(
+    STANDARD_FOOTER_FIELD_OPTIONS.map(({ value }) => [value, true]),
+  )
+  const lines = renderTestFooter({
+    quotaWindow: "both",
+    width: 200,
+    branch: "main",
+    sessionName: "session-name",
+    model: {
+      id: "qwen3-coder",
+      provider: "other-provider",
+      reasoning: true,
+    },
+    providerCount: 2,
+    contextUsage: { contextWindow: 128000, percent: 4.2 },
+    standardFooter: customStandardFooter({
+      ...allFields,
+      showForOtherProviders: true,
+    }),
+    entries: [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          usage: {
+            input: 1000,
+            output: 500,
+            cacheRead: 50000,
+            cacheWrite: 70000,
+            cost: { total: 1.25 },
+          },
+        },
+      },
+    ],
+  })
+
+  assert.equal(lines[0], "/project (main) • session-name")
+  assert.match(
+    lines[1],
+    /↑1\.0k ↓500 T1\.5k R50k W70k \$1\.250 \(sub\) 4\.2%\/128k/,
+  )
+  assert.match(lines[1], /\(other-provider\) qwen3-coder • thinking off$/)
+  assert.doesNotMatch(lines.join("\n"), /W 42%|5h|WP/)
+})
+
 test("standard footer configuration is backward compatible and normalized", () => {
   const legacy = normalizeFooterConfig({
     quotaWindow: "both",
@@ -578,6 +662,126 @@ test("standard footer configuration is backward compatible and normalized", () =
     standardFooter: { mode: "invalid", workingDirectory: false },
   }).standardFooter
   assert.equal(invalid.mode, "default")
+})
+
+test("other-provider footer setting accepts only booleans", () => {
+  const cases = [
+    [undefined, false],
+    [false, false],
+    [true, true],
+    ["true", false],
+    [1, false],
+    [null, false],
+  ]
+
+  for (const [value, expected] of cases) {
+    const standardFooter =
+      value === undefined ? {} : { showForOtherProviders: value }
+    assert.equal(
+      normalizeFooterConfig({ standardFooter }).standardFooter
+        .showForOtherProviders,
+      expected,
+    )
+  }
+
+  assert.equal(
+    STANDARD_FOOTER_FIELD_OPTIONS.some(
+      ({ value }) => value === "showForOtherProviders",
+    ),
+    false,
+  )
+})
+
+test("custom footer activation follows provider and setting", () => {
+  for (const [provider, showForOtherProviders, expected] of [
+    ["openai-codex", false, true],
+    ["openai-codex", true, true],
+    ["other-provider", false, false],
+    ["other-provider", true, true],
+    [undefined, false, false],
+    [undefined, true, true],
+  ]) {
+    const state = {
+      footerConfig: normalizeFooterConfig({
+        standardFooter: { showForOtherProviders },
+      }),
+    }
+    assert.equal(
+      shouldUseCustomFooter({ model: { provider } }, state),
+      expected,
+    )
+  }
+})
+
+test("footer synchronization installs and restores footer immediately", () => {
+  const calls = []
+  const originalRender = () => "stale"
+  const state = {
+    footerConfig: normalizeFooterConfig({}),
+    requestRender: originalRender,
+  }
+  const ctx = {
+    model: { provider: "openai-codex" },
+    ui: { setFooter: (footer) => calls.push(footer) },
+  }
+
+  syncFooter({}, ctx, state)
+  assert.equal(typeof calls.at(-1), "function")
+
+  ctx.model = { provider: "other-provider" }
+  syncFooter({}, ctx, state)
+  assert.equal(calls.at(-1), undefined)
+  assert.notEqual(state.requestRender, originalRender)
+  assert.equal(state.requestRender(), undefined)
+
+  state.footerConfig.standardFooter.showForOtherProviders = true
+  syncFooter({}, ctx, state)
+  assert.equal(typeof calls.at(-1), "function")
+
+  ctx.model = { provider: "openai-codex" }
+  state.footerConfig.standardFooter.showForOtherProviders = false
+  syncFooter({}, ctx, state)
+  assert.equal(typeof calls.at(-1), "function")
+})
+
+test("extension synchronizes footer when the selected model changes", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-switch-"))
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = tempDir
+
+  try {
+    const handlers = new Map()
+    const footerCalls = []
+    const pi = {
+      on: (event, handler) => handlers.set(event, handler),
+      registerCommand() {},
+    }
+    extension(pi)
+
+    const ctx = {
+      model: { id: "gpt-5.5", provider: "openai-codex" },
+      ui: { setFooter: (footer) => footerCalls.push(footer) },
+      modelRegistry: {
+        getApiKeyAndHeaders: async () => ({ ok: false }),
+      },
+      sessionManager: { getBranch: () => [] },
+    }
+
+    await handlers.get("session_start")({}, ctx)
+    assert.equal(typeof footerCalls.at(-1), "function")
+
+    ctx.model = { id: "qwen3-coder", provider: "other-provider" }
+    handlers.get("model_select")({}, ctx)
+    assert.equal(footerCalls.at(-1), undefined)
+
+    ctx.model = { id: "gpt-5.5", provider: "openai-codex" }
+    handlers.get("model_select")({}, ctx)
+    assert.equal(typeof footerCalls.at(-1), "function")
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    await rm(tempDir, { recursive: true, force: true })
+  }
 })
 
 test("default footer mode ignores persisted custom toggles", () => {
@@ -855,6 +1059,39 @@ test("standard footer editor preserves Default and Custom mode semantics", async
   })
 })
 
+test("standard footer editor preserves other-provider activation", async (t) => {
+  const initialConfig = {
+    standardFooter: {
+      ...DEFAULT_STANDARD_FOOTER_CONFIG,
+      showForOtherProviders: true,
+    },
+  }
+
+  await t.test("save", async () => {
+    const result = await runStandardFooterEditor({
+      initialConfig,
+      inputs: [" ", "\r"],
+    })
+    assert.equal(
+      result.persistedConfig.standardFooter.showForOtherProviders,
+      true,
+    )
+  })
+
+  await t.test("cancel", async () => {
+    const result = await runStandardFooterEditor({
+      initialConfig,
+      inputs: [" ", "\x1b"],
+      persistInitial: true,
+    })
+    assert.equal(
+      result.state.footerConfig.standardFooter.showForOtherProviders,
+      true,
+    )
+    assert.equal(result.persistedUnchanged, true)
+  })
+})
+
 test("standard footer editor rolls back Esc and Ctrl+C without persisting", async (t) => {
   for (const [name, cancelKey] of [
     ["Esc", "\x1b"],
@@ -934,6 +1171,85 @@ test("standard footer draft previews immediately and cancel restores it", async 
   assert.equal(result.persistedUnchanged, true)
 })
 
+test("other-provider command persists, synchronizes, cancels, and resets", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-other-"))
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = tempDir
+
+  try {
+    let handler
+    const footerCalls = []
+    const notifications = []
+    const menus = []
+    const state = {
+      footerConfig: normalizeFooterConfig({}),
+      requestRender() {},
+    }
+    const pi = {
+      registerCommand: (_name, command) => (handler = command.handler),
+    }
+    registerChatGptLimitFooterCommand(pi, state)
+
+    const selections = []
+    const ctx = {
+      model: { id: "qwen3-coder", provider: "other-provider" },
+      ui: {
+        select: async (title, options) => {
+          menus.push({ title, options })
+          return selections.shift()
+        },
+        confirm: async () => true,
+        setFooter: (footer) => footerCalls.push(footer),
+        notify: (message, level) => notifications.push({ message, level }),
+      },
+    }
+
+    selections.push("Other providers (Disabled)", "Enabled")
+    await handler("", ctx)
+    assert.equal(state.footerConfig.standardFooter.showForOtherProviders, true)
+    assert.equal(typeof footerCalls.at(-1), "function")
+    assert.match(menus[0].options.join("\n"), /Other providers \(Disabled\)/)
+
+    selections.push("Other providers (Enabled)", "Disabled")
+    await handler("", ctx)
+    assert.equal(state.footerConfig.standardFooter.showForOtherProviders, false)
+    assert.equal(footerCalls.at(-1), undefined)
+
+    const configPath = join(tempDir, "chatgpt-limit.json")
+    const beforeCancel = await readFile(configPath, "utf8")
+    selections.push("Other providers (Disabled)", undefined)
+    await handler("", ctx)
+    assert.equal(await readFile(configPath, "utf8"), beforeCancel)
+
+    selections.push("Other providers (Disabled)", "Enabled")
+    await handler("", ctx)
+    selections.push("Reset to Pi defaults")
+    await handler("", ctx)
+    assert.deepEqual(
+      state.footerConfig.standardFooter,
+      DEFAULT_STANDARD_FOOTER_CONFIG,
+    )
+    assert.equal(footerCalls.at(-1), undefined)
+    assert.deepEqual(
+      JSON.parse(await readFile(configPath, "utf8")).standardFooter,
+      DEFAULT_STANDARD_FOOTER_CONFIG,
+    )
+    assert.deepEqual(
+      notifications.map(({ message }) => message),
+      [
+        "Custom footer for other providers: enabled",
+        "Custom footer for other providers: disabled",
+        "Custom footer for other providers: enabled",
+        "Standard footer reset to Pi defaults.",
+      ],
+    )
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    await rm(tempDir, { recursive: true, force: true })
+  }
+})
+
 test("standard footer mode selection and reset still persist", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-config-"))
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR
@@ -957,6 +1273,7 @@ test("standard footer mode selection and reset still persist", async () => {
         select: async () => selections.shift(),
         confirm: async () => true,
         notify() {},
+        setFooter() {},
       },
     }
 

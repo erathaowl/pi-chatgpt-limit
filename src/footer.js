@@ -293,6 +293,13 @@ function renderFooter(pi, ctx, state, footerData, theme, width) {
   return lines
 }
 
+export function shouldUseCustomFooter(ctx, state) {
+  return (
+    isOpenAICodexProvider(ctx.model?.provider) ||
+    state.footerConfig.standardFooter.showForOtherProviders
+  )
+}
+
 /** @param {import('@earendil-works/pi-coding-agent').ExtensionContext} ctx */
 export function installFooter(pi, ctx, state) {
   ctx.ui.setFooter((tui, theme, footerData) => {
@@ -308,4 +315,14 @@ export function installFooter(pi, ctx, state) {
       },
     }
   })
+}
+
+export function syncFooter(pi, ctx, state) {
+  if (!shouldUseCustomFooter(ctx, state)) {
+    state.requestRender = () => {}
+    ctx.ui.setFooter(undefined)
+    return
+  }
+
+  installFooter(pi, ctx, state)
 }

@@ -67,6 +67,34 @@ Use the dedicated standard-footer command to switch between Pi's default layout 
 
 It can independently show or hide the working directory, Git branch, session name, input/output/total/cache tokens, cost, subscription marker, context usage, provider, model, and thinking level.
 
+#### Other providers
+
+By default, `pi-chatgpt-limit` replaces Pi's footer only when the active provider is `openai-codex`. Other providers continue to use Pi's native footer. To use the configured standard footer with every provider, choose:
+
+```txt
+/chatgpt-limit-footer
+→ Other providers
+→ Enabled
+```
+
+The change applies immediately, as do later provider/model switches; `/reload` is not required. ChatGPT quota information is never shown for other providers, even when an old OpenAI usage snapshot is available.
+
+For example, with the option disabled, an `openai-codex` model can show:
+
+```txt
+~/project (main)
+T35k 4.2%/272k                    gpt-5.5 • W 42%
+```
+
+Switching to another provider restores Pi's native footer. With **Other providers** enabled, that provider instead uses the configured standard fields without quota output:
+
+```txt
+~/project (main)
+T35k 4.2%/128k                      qwen3-coder
+```
+
+No `W`, `5h`, `WP`, or quota reset fragment is added for a non-`openai-codex` provider, regardless of the configured quota position.
+
 #### Interactive standard-footer editor
 
 Choose **Standard footer fields** to open a persistent checklist:
@@ -124,6 +152,7 @@ Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same foote
   "footerPosition": "second",
   "standardFooter": {
     "mode": "custom",
+    "showForOtherProviders": false,
     "workingDirectory": false,
     "gitBranch": false,
     "sessionName": false,
@@ -142,7 +171,22 @@ Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same foote
 }
 ```
 
-Set `footerPosition` to `first`, `second`, or `third`. Missing or invalid settings fall back to the standard Pi-style footer. Selecting **Reset to Pi defaults** restores the canonical field set regardless of previous custom toggles.
+Set `footerPosition` to `first`, `second`, or `third`. Missing or invalid settings fall back to the standard Pi-style footer. `showForOtherProviders` accepts only a boolean and defaults to `false`.
+
+A minimal input can enable the custom footer on other providers while selecting a few fields:
+
+```json
+{
+  "standardFooter": {
+    "mode": "custom",
+    "showForOtherProviders": true,
+    "totalTokens": true,
+    "contextUsage": true
+  }
+}
+```
+
+The persisted file is normalized and contains the complete standard-footer structure. Editing or canceling the visual-field checklist preserves `showForOtherProviders`. Selecting **Reset to Pi defaults** restores the canonical field set, Default mode, and `showForOtherProviders: false`; when another provider is active, Pi's native footer is restored immediately.
 
 ## Notes
 
