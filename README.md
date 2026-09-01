@@ -65,13 +65,55 @@ Use the dedicated standard-footer command to switch between Pi's default layout 
 /chatgpt-limit-footer
 ```
 
-It can independently show or hide the working directory, Git branch, session name, input/output/total/cache tokens, cost, subscription marker, context usage, provider, model, and thinking level. **Total tokens** is `input + output`; cache reads and cache writes are never included.
+It can independently show or hide the working directory, Git branch, session name, input/output/total/cache tokens, cost, subscription marker, context usage, provider, model, and thinking level.
+
+#### Interactive standard-footer editor
+
+Choose **Standard footer fields** to open a persistent checklist:
+
+```txt
+Standard footer fields
+Mode: Custom
+
+  [x] Working directory
+  [x] Git branch
+  [x] Session name
+  [ ] Input tokens
+  [ ] Output tokens
+› [x] Total tokens
+  [ ] Cache read tokens
+  [ ] Cache write tokens
+  [ ] Cost
+  [ ] Subscription marker
+  [x] Context usage
+  [ ] Provider
+  [x] Model
+  [x] Thinking level
+
+↑↓ navigate • space toggle • enter save • esc cancel
+```
+
+Controls:
+
+| Key    | Action                       |
+| ------ | ---------------------------- |
+| ↑ / ↓  | Navigate                     |
+| Space  | Toggle the selected field    |
+| Enter  | Save all changes and close   |
+| Esc    | Cancel all changes and close |
+| Ctrl+C | Cancel all changes and close |
+
+Space updates a checkbox without leaving the menu, so you can edit several fields in one visit. The footer preview updates immediately, but only Enter persists the final changes. Esc or Ctrl+C discards the entire draft and restores the previous footer.
+
+Opening the editor in Default mode displays the canonical Pi defaults and does not itself switch modes. Saving a changed default field switches to Custom mode. If every field is returned to its initial default value before saving, the footer remains in Default mode. A footer already in Custom mode remains Custom.
 
 For example, enable only **Total tokens** and **Context usage** in Custom mode for a compact statistics line:
 
 ```txt
 T35k 4.2%/272k
 ```
+
+This means Total tokens and Context usage are enabled and all other standard fields are disabled. **Total tokens = input + output**; cache reads and cache writes are excluded. ChatGPT quota placement is configured independently and can remain on the first, second, or third footer line.
 
 Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same footer preference applies across pi sessions. The file uses this structure:
 

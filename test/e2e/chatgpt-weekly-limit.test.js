@@ -131,6 +131,10 @@ function expectBlock(pattern) {
   return `expect {\n  ${tclDoubleQuote(pattern)} {}\n  timeout { exit 1 }\n  eof { exit 1 }\n}`
 }
 
+function expectExactBlock(pattern) {
+  return `expect {\n  -exact ${tclDoubleQuote(pattern)} {}\n  timeout { exit 1 }\n  eof { exit 1 }\n}`
+}
+
 function stripAnsi(value) {
   return String(value)
     .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
@@ -241,6 +245,7 @@ async function runRealPiTuiExpect({
   settleMs = 100,
   extraEnv = {},
   timeoutMs = 12000,
+  command = "/chatgpt-limit",
 }) {
   if (
     spawnSync("expect", ["-v"], { stdio: "ignore" }).error?.code === "ENOENT"
@@ -298,7 +303,7 @@ set pi_pid [exp_pid]
 stty columns 160 rows 40
 ${expectBlock(readyText)}
 after 300
-send "/chatgpt-limit\\r"
+send "${expectSendLiteral(command)}\\r"
 ${body}
 after ${settleMs}
 catch {exec kill -TERM $pi_pid}
@@ -339,6 +344,109 @@ function customStandardFooter(overrides = {}) {
       STANDARD_FOOTER_FIELD_OPTIONS.map(({ value }) => [value, false]),
     ),
     ...overrides,
+  }
+}
+
+async function runStandardFooterEditor({
+  initialConfig = {},
+  inputs,
+  width = 120,
+  persistInitial = false,
+}) {
+  const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-editor-"))
+  const configPath = join(tempDir, "chatgpt-limit.json")
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = tempDir
+
+  try {
+    const normalizedInitial = normalizeFooterConfig(initialConfig)
+    const initialText = `${JSON.stringify(normalizedInitial, null, 2)}\n`
+    if (persistInitial) await writeFile(configPath, initialText)
+
+    let handler
+    const state = {
+      footerConfig: normalizedInitial,
+      requestRenderCalls: 0,
+      requestRender() {
+        this.requestRenderCalls++
+      },
+    }
+    registerChatGptLimitFooterCommand(
+      {
+        registerCommand(name, command) {
+          assert.equal(name, "chatgpt-limit-footer")
+          handler = command.handler
+        },
+      },
+      state,
+    )
+
+    const tui = {
+      requestRenderCalls: 0,
+      requestRender() {
+        this.requestRenderCalls++
+      },
+    }
+    const accentRows = []
+    const theme = {
+      bold: (text) => text,
+      fg(color, text) {
+        if (color === "accent") accentRows.push(text)
+        return text
+      },
+    }
+    const renders = []
+    const persistedDuringInput = []
+    const previewConfigs = []
+    const notifications = []
+    let customDoneCalls = 0
+
+    const ctx = {
+      ui: {
+        select: async () => "Standard footer fields",
+        async custom(factory) {
+          let result
+          let done = false
+          const component = factory(tui, theme, {}, (value) => {
+            customDoneCalls++
+            result = value
+            done = true
+          })
+          renders.push(component.render(width))
+          for (const input of inputs) {
+            assert.equal(done, false, "custom editor closed before all inputs")
+            component.handleInput(input)
+            persistedDuringInput.push(existsSync(configPath))
+            previewConfigs.push(structuredClone(state.footerConfig))
+            renders.push(component.render(width))
+          }
+          assert.equal(done, true, "custom editor did not close")
+          return result
+        },
+        notify(message, level) {
+          notifications.push({ message, level })
+        },
+      },
+    }
+
+    await handler("", ctx)
+    const finalText = await readIfExists(configPath)
+    return {
+      state,
+      tui,
+      renders,
+      accentRows,
+      notifications,
+      customDoneCalls,
+      persistedDuringInput,
+      previewConfigs,
+      persistedConfig: finalText ? JSON.parse(finalText) : undefined,
+      persistedUnchanged: persistInitial && finalText === initialText,
+    }
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    await rm(tempDir, { recursive: true, force: true })
   }
 }
 
@@ -626,29 +734,224 @@ test("custom footer truncates cleanly at narrow widths", () => {
   assert.match(plainLines[0], /\.\.\.$/)
 })
 
-test("standard footer command persists toggles and resets defaults", async () => {
+test("standard footer checklist renders, previews, and saves multiple fields", async () => {
+  const result = await runStandardFooterEditor({
+    inputs: [" ", "\x1b[B", " ", "\r"],
+  })
+
+  const initial = result.renders[0].join("\n")
+  assert.match(initial, /Standard footer fields/)
+  assert.match(initial, /Mode: Default • first change switches to Custom/)
+  assert.match(initial, /› \[x\] Working directory/)
+  assert.match(initial, /  \[x\] Input tokens/)
+  assert.match(initial, /  \[ \] Total tokens/)
+  assert.match(initial, /↑↓ navigate • space toggle • enter save • esc cancel/)
+
+  assert.match(result.renders[1].join("\n"), /› \[ \] Working directory/)
+  assert.match(result.renders[1].join("\n"), /Mode: Custom • unsaved changes/)
+  assert.match(result.renders[2].join("\n"), /› \[x\] Git branch/)
+  assert.match(result.renders[3].join("\n"), /› \[ \] Git branch/)
+  assert.equal(result.customDoneCalls, 1)
+  assert.equal(result.state.requestRenderCalls, 3)
+  assert.equal(result.tui.requestRenderCalls, 3)
+  assert.ok(result.persistedDuringInput.every((persisted) => !persisted))
+  assert.equal(result.persistedConfig.standardFooter.mode, "custom")
+  assert.equal(result.persistedConfig.standardFooter.workingDirectory, false)
+  assert.equal(result.persistedConfig.standardFooter.gitBranch, false)
+  assert.deepEqual(result.notifications, [
+    { message: "Standard footer fields updated.", level: "info" },
+  ])
+})
+
+test("standard footer checklist navigation is bounded and truncates safely", async () => {
+  const inputs = [
+    "\x1b[A",
+    ...Array(STANDARD_FOOTER_FIELD_OPTIONS.length + 2).fill("\x1b[B"),
+    "\r",
+  ]
+  const result = await runStandardFooterEditor({ inputs, width: 18 })
+  const plainRenders = result.renders.map((lines) => lines.map(stripAnsi))
+
+  assert.ok(
+    plainRenders.flat().every((line) => line.length <= 18),
+    plainRenders.flat().join("\n"),
+  )
+  assert.match(plainRenders[1].join("\n"), /› \[x\] Working dir/)
+  assert.match(plainRenders.at(-1).join("\n"), /› \[x\] Thinking le/)
+  assert.equal(result.persistedConfig, undefined)
+  assert.equal(result.state.footerConfig.standardFooter.mode, "default")
+})
+
+test("standard footer editor preserves Default and Custom mode semantics", async (t) => {
+  await t.test("Default plus Enter remains Default", async () => {
+    const result = await runStandardFooterEditor({ inputs: ["\r"] })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "default")
+    assert.equal(result.persistedConfig, undefined)
+  })
+
+  await t.test("Default plus one toggle saves Custom", async () => {
+    const result = await runStandardFooterEditor({ inputs: [" ", "\r"] })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "custom")
+    assert.equal(
+      result.state.footerConfig.standardFooter.workingDirectory,
+      false,
+    )
+    assert.equal(result.persistedConfig.standardFooter.mode, "custom")
+  })
+
+  await t.test("Default plus two toggles remains Default", async () => {
+    const result = await runStandardFooterEditor({
+      inputs: [" ", " ", "\r"],
+    })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "default")
+    assert.equal(result.persistedConfig, undefined)
+  })
+
+  await t.test("restoring several Default fields remains Default", async () => {
+    const result = await runStandardFooterEditor({
+      inputs: [" ", "\x1b[B", " ", "\x1b[A", " ", "\x1b[B", " ", "\r"],
+    })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "default")
+    assert.equal(result.persistedConfig, undefined)
+  })
+
+  await t.test("Custom plus Enter remains Custom", async () => {
+    const initialConfig = {
+      standardFooter: customStandardFooter({ totalTokens: true }),
+    }
+    const result = await runStandardFooterEditor({
+      initialConfig,
+      inputs: ["\r"],
+    })
+    assert.deepEqual(
+      result.state.footerConfig.standardFooter,
+      normalizeFooterConfig(initialConfig).standardFooter,
+    )
+    assert.equal(result.persistedConfig, undefined)
+  })
+
+  await t.test("modified Custom fields save as Custom", async () => {
+    const result = await runStandardFooterEditor({
+      initialConfig: { standardFooter: customStandardFooter() },
+      inputs: [" ", "\r"],
+    })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "custom")
+    assert.equal(
+      result.state.footerConfig.standardFooter.workingDirectory,
+      true,
+    )
+    assert.equal(result.persistedConfig.standardFooter.mode, "custom")
+  })
+
+  await t.test("Custom values equal to defaults remain Custom", async () => {
+    const result = await runStandardFooterEditor({
+      initialConfig: {
+        standardFooter: { ...DEFAULT_STANDARD_FOOTER_CONFIG, mode: "custom" },
+      },
+      inputs: ["\r"],
+    })
+    assert.equal(result.state.footerConfig.standardFooter.mode, "custom")
+    assert.equal(result.persistedConfig, undefined)
+  })
+})
+
+test("standard footer editor rolls back Esc and Ctrl+C without persisting", async (t) => {
+  for (const [name, cancelKey] of [
+    ["Esc", "\x1b"],
+    ["Ctrl+C", "\x03"],
+  ]) {
+    await t.test(name, async () => {
+      const initialConfig = {
+        quotaWindow: "both",
+        standardFooter: customStandardFooter({ totalTokens: true }),
+      }
+      const result = await runStandardFooterEditor({
+        initialConfig,
+        inputs: [" ", "\x1b[B", " ", cancelKey],
+        persistInitial: true,
+      })
+
+      assert.deepEqual(
+        result.state.footerConfig,
+        normalizeFooterConfig(initialConfig),
+      )
+      assert.equal(result.persistedUnchanged, true)
+      assert.equal(result.notifications.length, 0)
+      assert.equal(result.state.requestRenderCalls, 3)
+    })
+  }
+})
+
+test("standard footer draft previews immediately and cancel restores it", async () => {
+  const initialConfig = {
+    quotaWindow: "hidden",
+    standardFooter: customStandardFooter({
+      totalTokens: true,
+      contextUsage: true,
+    }),
+  }
+  const result = await runStandardFooterEditor({
+    initialConfig,
+    inputs: ["\x1b[B", "\x1b[B", "\x1b[B", " ", "\x1b"],
+    persistInitial: true,
+  })
+  const footerOptions = {
+    quotaWindow: "hidden",
+    entries: [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          usage: {
+            input: 34000,
+            output: 1000,
+            cacheRead: 18000,
+            cacheWrite: 7000,
+          },
+        },
+      },
+    ],
+    contextUsage: { contextWindow: 272000, percent: 4.2 },
+  }
+
+  const before = renderTestFooter({
+    ...footerOptions,
+    standardFooter: normalizeFooterConfig(initialConfig).standardFooter,
+  })[1]
+  const preview = renderTestFooter({
+    ...footerOptions,
+    standardFooter: result.previewConfigs[3].standardFooter,
+  })[1]
+  const after = renderTestFooter({
+    ...footerOptions,
+    standardFooter: result.state.footerConfig.standardFooter,
+  })[1]
+
+  assert.equal(before, "T35k 4.2%/272k")
+  assert.equal(preview, "↑34k T35k 4.2%/272k")
+  assert.equal(after, before)
+  assert.doesNotMatch(preview, /R18k|W7k|T60k/)
+  assert.equal(result.persistedUnchanged, true)
+})
+
+test("standard footer mode selection and reset still persist", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-config-"))
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR
   process.env.PI_CODING_AGENT_DIR = tempDir
 
   try {
     let handler
-    const pi = {
-      registerCommand(name, command) {
-        assert.equal(name, "chatgpt-limit-footer")
-        handler = command.handler
-      },
-    }
     const state = {
-      footerConfig: normalizeFooterConfig({}),
-      requestRenderCalls: 0,
-      requestRender() {
-        this.requestRenderCalls++
-      },
+      footerConfig: normalizeFooterConfig({
+        standardFooter: customStandardFooter({ totalTokens: true }),
+      }),
+      requestRender() {},
     }
-    registerChatGptLimitFooterCommand(pi, state)
-
-    const selections = ["Standard footer fields", "Working directory: enabled"]
+    registerChatGptLimitFooterCommand(
+      { registerCommand: (_name, command) => (handler = command.handler) },
+      state,
+    )
+    const selections = ["Footer mode (Custom)", "Default"]
     const ctx = {
       ui: {
         select: async () => selections.shift(),
@@ -656,25 +959,7 @@ test("standard footer command persists toggles and resets defaults", async () =>
         notify() {},
       },
     }
-    await handler("", ctx)
 
-    assert.equal(state.footerConfig.standardFooter.mode, "custom")
-    assert.equal(state.footerConfig.standardFooter.workingDirectory, false)
-    assert.equal(state.requestRenderCalls, 1)
-
-    const restoredState = {}
-    await restoreFooterConfig(
-      { sessionManager: { getBranch: () => [] } },
-      restoredState,
-    )
-    assert.equal(restoredState.footerConfig.standardFooter.mode, "custom")
-    assert.equal(
-      restoredState.footerConfig.standardFooter.workingDirectory,
-      false,
-    )
-
-    const modeSelections = ["Footer mode (Custom)", "Default"]
-    ctx.ui.select = async () => modeSelections.shift()
     await handler("", ctx)
     assert.equal(state.footerConfig.standardFooter.mode, "default")
 
@@ -684,10 +969,115 @@ test("standard footer command persists toggles and resets defaults", async () =>
       state.footerConfig.standardFooter,
       DEFAULT_STANDARD_FOOTER_CONFIG,
     )
+
+    const restoredState = {}
+    await restoreFooterConfig(
+      { sessionManager: { getBranch: () => [] } },
+      restoredState,
+    )
+    assert.deepEqual(
+      restoredState.footerConfig.standardFooter,
+      DEFAULT_STANDARD_FOOTER_CONFIG,
+    )
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir
     await rm(tempDir, { recursive: true, force: true })
+  }
+})
+
+test("real pi TUI standard footer checklist saves, cancels, and preserves Default", async (t) => {
+  const down = "\\033\\[B"
+  const enter = "\\r"
+  const escape = "\\033"
+  const openFields = `${down}${enter}`
+  const token = fakeJwt({
+    "https://api.openai.com/auth": { chatgpt_account_id: "acct_fields" },
+  })
+  const server = await startUsageServer((_req, res) => {
+    sendUsageResponse(res)
+  })
+
+  try {
+    await t.test("multiple toggles stay open and save together", async () => {
+      const initialConfig = normalizeFooterConfig({})
+      const expectedConfig = normalizeFooterConfig({
+        standardFooter: {
+          ...DEFAULT_STANDARD_FOOTER_CONFIG,
+          mode: "custom",
+          workingDirectory: false,
+          gitBranch: false,
+        },
+      })
+      const output = await runRealPiTuiExpect({
+        baseUrl: server.baseUrl,
+        apiKey: token,
+        command: "/chatgpt-limit-footer",
+        readyText: "gpt-5.5",
+        initialConfig,
+        expectedConfig,
+        scriptBody: `${expectBlock("Standard footer fields")}
+send "${expectSendLiteral(openFields)}"
+${expectBlock("Mode: Default • first change switches to Custom")}
+send " "
+${expectExactBlock("› [ ] Working directory")}
+send "${expectSendLiteral(down)}"
+${expectExactBlock("› [x] Git branch")}
+send " "
+${expectExactBlock("› [ ] Git branch")}
+send "${expectSendLiteral(enter)}"
+${expectBlock("Standard footer fields updated.")}`,
+      })
+      assert.match(stripAnsi(output), /› \[ \] Working directory/)
+      assert.match(stripAnsi(output), /› \[ \] Git branch/)
+    })
+
+    await t.test("Esc restores the saved configuration", async () => {
+      const initialConfig = normalizeFooterConfig({
+        standardFooter: customStandardFooter({
+          totalTokens: true,
+          contextUsage: true,
+        }),
+      })
+      await runRealPiTuiExpect({
+        baseUrl: server.baseUrl,
+        apiKey: token,
+        command: "/chatgpt-limit-footer",
+        readyText: "gpt-5.5",
+        initialConfig,
+        expectedConfig: initialConfig,
+        scriptBody: `${expectBlock("Standard footer fields")}
+send "${expectSendLiteral(openFields)}"
+${expectBlock("Mode: Custom")}
+send " "
+${expectExactBlock("› [x] Working directory")}
+send "${expectSendLiteral(escape)}"
+${expectBlock("0.0%/272k")}`,
+      })
+    })
+
+    await t.test("toggling back keeps Default mode", async () => {
+      const initialConfig = normalizeFooterConfig({})
+      await runRealPiTuiExpect({
+        baseUrl: server.baseUrl,
+        apiKey: token,
+        command: "/chatgpt-limit-footer",
+        readyText: "gpt-5.5",
+        initialConfig,
+        expectedConfig: initialConfig,
+        scriptBody: `${expectBlock("Standard footer fields")}
+send "${expectSendLiteral(openFields)}"
+${expectBlock("Mode: Default • first change switches to Custom")}
+send " "
+${expectExactBlock("› [ ] Working directory")}
+send " "
+${expectExactBlock("› [x] Working directory")}
+send "${expectSendLiteral(enter)}"
+${expectBlock("gpt-5.5")}`,
+      })
+    })
+  } finally {
+    await server.close()
   }
 })
 

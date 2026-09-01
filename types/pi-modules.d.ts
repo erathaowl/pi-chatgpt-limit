@@ -4,6 +4,7 @@ declare module "@earendil-works/pi-tui" {
     down: unknown
     enter: unknown
     escape: unknown
+    space: unknown
     ctrl(key: string): unknown
   }
 

@@ -210,35 +210,132 @@ async function configureStandardFooterMode(ctx, state) {
   ctx.ui.notify(`Standard footer mode: ${selected.label}`, "info")
 }
 
-async function configureStandardFooterFields(ctx, state) {
-  const standardFooter = state.footerConfig.standardFooter
-  const labels = STANDARD_FOOTER_FIELD_OPTIONS.map((option) => {
-    const enabled =
-      standardFooter.mode === "default"
-        ? DEFAULT_STANDARD_FOOTER_CONFIG[option.value]
-        : standardFooter[option.value]
-    return `${option.label}: ${enabled ? "enabled" : "disabled"}`
-  })
-  const selectedLabel = await ctx.ui.select("Standard footer fields", labels)
-  const selected = STANDARD_FOOTER_FIELD_OPTIONS[labels.indexOf(selectedLabel)]
-  if (!selected) return
+function standardFooterFieldsEqual(left, right) {
+  return STANDARD_FOOTER_FIELD_OPTIONS.every(
+    ({ value }) => left[value] === right[value],
+  )
+}
 
-  const currentValue =
-    standardFooter.mode === "default"
-      ? DEFAULT_STANDARD_FOOTER_CONFIG[selected.value]
-      : standardFooter[selected.value]
-  await saveFooterConfig(state, {
+async function configureStandardFooterFields(ctx, state) {
+  const originalConfig = normalizeFooterConfig({
     ...state.footerConfig,
+    standardFooter: { ...state.footerConfig.standardFooter },
+  })
+  const originalStandardFooter = originalConfig.standardFooter
+  const draft = {
+    ...(originalStandardFooter.mode === "default"
+      ? DEFAULT_STANDARD_FOOTER_CONFIG
+      : originalStandardFooter),
+  }
+  const initialFields = { ...draft }
+
+  const result = await ctx.ui.custom((tui, theme, _keybindings, done) => {
+    let selectedIndex = 0
+
+    function applyPreview() {
+      const unchanged = standardFooterFieldsEqual(draft, initialFields)
+      state.footerConfig = unchanged
+        ? originalConfig
+        : normalizeFooterConfig({
+            ...originalConfig,
+            standardFooter: {
+              ...draft,
+              mode: "custom",
+            },
+          })
+      state.requestRender()
+    }
+
+    return {
+      invalidate() {},
+      handleInput(data) {
+        if (matchesKey(data, Key.up)) {
+          selectedIndex = Math.max(0, selectedIndex - 1)
+          tui.requestRender()
+          return
+        }
+        if (matchesKey(data, Key.down)) {
+          selectedIndex = Math.min(
+            STANDARD_FOOTER_FIELD_OPTIONS.length - 1,
+            selectedIndex + 1,
+          )
+          tui.requestRender()
+          return
+        }
+        if (matchesKey(data, Key.space)) {
+          const field = STANDARD_FOOTER_FIELD_OPTIONS[selectedIndex].value
+          draft[field] = !draft[field]
+          applyPreview()
+          tui.requestRender()
+          return
+        }
+        if (matchesKey(data, Key.enter)) {
+          done({ ...draft })
+          return
+        }
+        if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+          done(undefined)
+        }
+      },
+      render(width) {
+        const changed = !standardFooterFieldsEqual(draft, initialFields)
+        const mode =
+          originalStandardFooter.mode === "default" && !changed
+            ? "Mode: Default • first change switches to Custom"
+            : changed
+              ? "Mode: Custom • unsaved changes"
+              : "Mode: Custom"
+        const lines = [
+          theme.bold("Standard footer fields"),
+          theme.fg("dim", mode),
+          "",
+        ]
+
+        for (
+          let index = 0;
+          index < STANDARD_FOOTER_FIELD_OPTIONS.length;
+          index++
+        ) {
+          const option = STANDARD_FOOTER_FIELD_OPTIONS[index]
+          const isSelected = index === selectedIndex
+          const cursor = isSelected ? "› " : "  "
+          const checkbox = draft[option.value] ? "[x]" : "[ ]"
+          const text = `${cursor}${checkbox} ${option.label}`
+          lines.push(isSelected ? theme.fg("accent", text) : text)
+        }
+
+        lines.push(
+          "",
+          theme.fg(
+            "dim",
+            "↑↓ navigate • space toggle • enter save • esc cancel",
+          ),
+        )
+        return lines.map((line) => truncateToWidth(line, width, "…"))
+      },
+    }
+  })
+
+  if (result === undefined) {
+    state.footerConfig = originalConfig
+    state.requestRender()
+    return
+  }
+
+  if (standardFooterFieldsEqual(result, initialFields)) {
+    state.footerConfig = originalConfig
+    state.requestRender()
+    return
+  }
+
+  await saveFooterConfig(state, {
+    ...originalConfig,
     standardFooter: {
-      ...standardFooter,
+      ...result,
       mode: "custom",
-      [selected.value]: !currentValue,
     },
   })
-  ctx.ui.notify(
-    `${selected.label}: ${currentValue ? "disabled" : "enabled"} (custom mode)`,
-    "info",
-  )
+  ctx.ui.notify("Standard footer fields updated.", "info")
 }
 
 async function resetStandardFooterConfig(ctx, state) {
