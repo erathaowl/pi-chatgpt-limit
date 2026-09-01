@@ -8,7 +8,12 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 
-import { normalizeFooterConfig } from "../../src/config.js"
+import { normalizeFooterConfig, restoreFooterConfig } from "../../src/config.js"
+import {
+  DEFAULT_STANDARD_FOOTER_CONFIG,
+  STANDARD_FOOTER_FIELD_OPTIONS,
+} from "../../src/constants.js"
+import { registerChatGptLimitFooterCommand } from "../../src/command.js"
 import { installFooter } from "../../src/footer.js"
 
 const EXTENSION_PATH = resolve("index.js")
@@ -318,7 +323,7 @@ close
         JSON.parse(
           await readFile(join(agentDir, "chatgpt-limit.json"), "utf8"),
         ),
-        expectedConfig,
+        normalizeFooterConfig(expectedConfig),
       )
     }
     return output
@@ -327,25 +332,49 @@ close
   }
 }
 
-function renderFooterWithPosition(footerPosition, width = 80) {
+function customStandardFooter(overrides = {}) {
+  return {
+    mode: "custom",
+    ...Object.fromEntries(
+      STANDARD_FOOTER_FIELD_OPTIONS.map(({ value }) => [value, false]),
+    ),
+    ...overrides,
+  }
+}
+
+function renderTestFooter({
+  footerPosition = "second",
+  quotaWindow = "weekly",
+  standardFooter,
+  entries = [],
+  width = 80,
+  branch,
+  sessionName,
+  cwd = "/project",
+  model = { id: "gpt-5.5", provider: "openai-codex" },
+  providerCount = 1,
+  usingSubscription = true,
+  contextUsage = { contextWindow: 128000, percent: 10 },
+} = {}) {
   let footerFactory
   const state = {
-    footerConfig: {
-      quotaWindow: "weekly",
+    footerConfig: normalizeFooterConfig({
+      quotaWindow,
       displayMode: "used",
       footerPosition,
-    },
+      standardFooter,
+    }),
     usageSnapshot: { weekly: { usedPercent: 42 } },
     requestRender: () => {},
   }
   const ctx = {
-    model: { id: "gpt-5.5", provider: "openai-codex" },
-    getContextUsage: () => ({ contextWindow: 128000, percent: 10 }),
-    modelRegistry: { isUsingOAuth: () => true },
+    model,
+    getContextUsage: () => contextUsage,
+    modelRegistry: { isUsingOAuth: () => usingSubscription },
     sessionManager: {
-      getEntries: () => [],
-      getCwd: () => "/project",
-      getSessionName: () => undefined,
+      getEntries: () => entries,
+      getCwd: () => cwd,
+      getSessionName: () => sessionName,
     },
     ui: {
       setFooter(factory) {
@@ -360,12 +389,16 @@ function renderFooterWithPosition(footerPosition, width = 80) {
     { requestRender() {} },
     { fg: (_color, text) => text },
     {
-      getGitBranch: () => undefined,
-      getAvailableProviderCount: () => 1,
+      getGitBranch: () => branch,
+      getAvailableProviderCount: () => providerCount,
       onBranchChange: () => undefined,
     },
   )
   return footer.render(width)
+}
+
+function renderFooterWithPosition(footerPosition, width = 80) {
+  return renderTestFooter({ footerPosition, width })
 }
 
 test("footer position configuration accepts all supported values", () => {
@@ -411,6 +444,251 @@ test("footer supports all configured line positions", async (t) => {
     assert.match(lines[2], /W 42%$/)
     assert.equal(lines[2].length, 80)
   })
+})
+
+test("standard footer configuration is backward compatible and normalized", () => {
+  const legacy = normalizeFooterConfig({
+    quotaWindow: "both",
+    displayMode: "remaining",
+    footerPosition: "first",
+  })
+
+  assert.deepEqual(legacy.standardFooter, DEFAULT_STANDARD_FOOTER_CONFIG)
+
+  const custom = normalizeFooterConfig({
+    standardFooter: {
+      mode: "custom",
+      totalTokens: true,
+      inputTokens: "invalid",
+    },
+  }).standardFooter
+  assert.equal(custom.mode, "custom")
+  assert.equal(custom.totalTokens, true)
+  assert.equal(custom.inputTokens, true)
+
+  const invalid = normalizeFooterConfig({
+    standardFooter: { mode: "invalid", workingDirectory: false },
+  }).standardFooter
+  assert.equal(invalid.mode, "default")
+})
+
+test("default footer mode ignores persisted custom toggles", () => {
+  const lines = renderTestFooter({
+    quotaWindow: "hidden",
+    branch: "main",
+    sessionName: "session-name",
+    model: {
+      id: "gpt-5.5",
+      provider: "openai-codex",
+      reasoning: true,
+    },
+    standardFooter: {
+      ...customStandardFooter(),
+      mode: "default",
+    },
+  })
+
+  assert.equal(lines[0], "/project (main) • session-name")
+  assert.match(lines[1], /10\.0%\/128k/)
+  assert.match(lines[1], /gpt-5\.5 • thinking off$/)
+})
+
+test("custom footer totals only input and output tokens", () => {
+  const lines = renderTestFooter({
+    quotaWindow: "hidden",
+    standardFooter: customStandardFooter({
+      totalTokens: true,
+      contextUsage: true,
+    }),
+    entries: [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          usage: {
+            input: 1000,
+            output: 500,
+            cacheRead: 50000,
+            cacheWrite: 70000,
+          },
+        },
+      },
+    ],
+  })
+
+  assert.equal(lines[0], "")
+  assert.equal(lines[1], "T1.5k 10.0%/128k")
+  assert.doesNotMatch(lines[1], /↑|↓|R50k|W70k|T122k/)
+})
+
+test("cost and subscription marker are independently configurable", () => {
+  const entries = [
+    {
+      type: "message",
+      message: {
+        role: "assistant",
+        usage: { cost: { total: 1.25 } },
+      },
+    },
+  ]
+
+  const both = renderTestFooter({
+    quotaWindow: "hidden",
+    entries,
+    standardFooter: customStandardFooter({
+      cost: true,
+      subscriptionMarker: true,
+    }),
+  })[1]
+  assert.equal(both, "$1.250 (sub)")
+
+  const costOnly = renderTestFooter({
+    quotaWindow: "hidden",
+    entries,
+    standardFooter: customStandardFooter({ cost: true }),
+  })[1]
+  assert.equal(costOnly, "$1.250")
+
+  const subscriptionOnly = renderTestFooter({
+    quotaWindow: "hidden",
+    entries,
+    standardFooter: customStandardFooter({ subscriptionMarker: true }),
+  })[1]
+  assert.equal(subscriptionOnly, "(sub)")
+})
+
+test("custom location and model components omit unused separators", () => {
+  const location = renderTestFooter({
+    quotaWindow: "hidden",
+    branch: "main",
+    sessionName: "session-name",
+    standardFooter: customStandardFooter({
+      gitBranch: true,
+      sessionName: true,
+    }),
+  })
+  assert.equal(location[0], "(main) • session-name")
+
+  const sessionOnly = renderTestFooter({
+    quotaWindow: "hidden",
+    sessionName: "session-name",
+    standardFooter: customStandardFooter({ sessionName: true }),
+  })
+  assert.equal(sessionOnly[0], "session-name")
+
+  const modelOnly = renderTestFooter({
+    quotaWindow: "hidden",
+    standardFooter: customStandardFooter({ model: true }),
+  })
+  assert.match(modelOnly[1], /^\s+gpt-5\.5$/)
+  assert.doesNotMatch(modelOnly[1], /•|\(openai-codex\)/)
+
+  const providerOnly = renderTestFooter({
+    quotaWindow: "hidden",
+    providerCount: 2,
+    standardFooter: customStandardFooter({ provider: true }),
+  })
+  assert.match(providerOnly[1], /^\s+\(openai-codex\)$/)
+
+  const modelAndThinking = renderTestFooter({
+    quotaWindow: "hidden",
+    model: {
+      id: "gpt-5.5",
+      provider: "openai-codex",
+      reasoning: true,
+    },
+    standardFooter: customStandardFooter({
+      model: true,
+      thinkingLevel: true,
+    }),
+  })
+  assert.match(modelAndThinking[1], /^\s+gpt-5\.5 • thinking off$/)
+})
+
+test("custom footer truncates cleanly at narrow widths", () => {
+  const lines = renderTestFooter({
+    quotaWindow: "hidden",
+    width: 18,
+    branch: "long-branch-name",
+    sessionName: "long-session-name",
+    standardFooter: customStandardFooter({
+      workingDirectory: true,
+      gitBranch: true,
+      sessionName: true,
+      contextUsage: true,
+      model: true,
+      thinkingLevel: true,
+    }),
+  })
+
+  const plainLines = lines.map(stripAnsi)
+  assert.ok(plainLines.every((line) => line.length <= 18))
+  assert.match(plainLines[0], /\.\.\.$/)
+})
+
+test("standard footer command persists toggles and resets defaults", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "pi-chatgpt-limit-config-"))
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = tempDir
+
+  try {
+    let handler
+    const pi = {
+      registerCommand(name, command) {
+        assert.equal(name, "chatgpt-limit-footer")
+        handler = command.handler
+      },
+    }
+    const state = {
+      footerConfig: normalizeFooterConfig({}),
+      requestRenderCalls: 0,
+      requestRender() {
+        this.requestRenderCalls++
+      },
+    }
+    registerChatGptLimitFooterCommand(pi, state)
+
+    const selections = ["Standard footer fields", "Working directory: enabled"]
+    const ctx = {
+      ui: {
+        select: async () => selections.shift(),
+        confirm: async () => true,
+        notify() {},
+      },
+    }
+    await handler("", ctx)
+
+    assert.equal(state.footerConfig.standardFooter.mode, "custom")
+    assert.equal(state.footerConfig.standardFooter.workingDirectory, false)
+    assert.equal(state.requestRenderCalls, 1)
+
+    const restoredState = {}
+    await restoreFooterConfig(
+      { sessionManager: { getBranch: () => [] } },
+      restoredState,
+    )
+    assert.equal(restoredState.footerConfig.standardFooter.mode, "custom")
+    assert.equal(
+      restoredState.footerConfig.standardFooter.workingDirectory,
+      false,
+    )
+
+    const modeSelections = ["Footer mode (Custom)", "Default"]
+    ctx.ui.select = async () => modeSelections.shift()
+    await handler("", ctx)
+    assert.equal(state.footerConfig.standardFooter.mode, "default")
+
+    ctx.ui.select = async () => "Reset to Pi defaults"
+    await handler("", ctx)
+    assert.deepEqual(
+      state.footerConfig.standardFooter,
+      DEFAULT_STANDARD_FOOTER_CONFIG,
+    )
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir
+    await rm(tempDir, { recursive: true, force: true })
+  }
 })
 
 test("real pi TUI renders the ChatGPT weekly percentage in the footer", async () => {

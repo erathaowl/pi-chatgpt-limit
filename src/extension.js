@@ -1,5 +1,8 @@
 import { DEFAULT_FOOTER_CONFIG } from "./constants.js"
-import { registerChatGptLimitCommand } from "./command.js"
+import {
+  registerChatGptLimitCommand,
+  registerChatGptLimitFooterCommand,
+} from "./command.js"
 import { restoreFooterConfig } from "./config.js"
 import { installFooter } from "./footer.js"
 import { updateUsage } from "./usage.js"
@@ -7,7 +10,10 @@ import { updateUsage } from "./usage.js"
 function createState() {
   return {
     usageSnapshot: undefined,
-    footerConfig: { ...DEFAULT_FOOTER_CONFIG },
+    footerConfig: {
+      ...DEFAULT_FOOTER_CONFIG,
+      standardFooter: { ...DEFAULT_FOOTER_CONFIG.standardFooter },
+    },
     refreshTimer: undefined,
     requestRender: () => {},
   }
@@ -46,4 +52,5 @@ export default function (pi) {
   })
 
   registerChatGptLimitCommand(pi, state, queueUpdate)
+  registerChatGptLimitFooterCommand(pi, state)
 }

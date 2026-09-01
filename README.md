@@ -44,7 +44,7 @@ This shows:
 
 ### Footer configuration
 
-The `/chatgpt-limit` menu also configures the footer display:
+The `/chatgpt-limit` menu configures the ChatGPT quota display:
 
 - show weekly usage (default), 5-hour usage, both, or hide usage
 - show used percent, used percent with reset, remaining percent, or remaining percent with reset
@@ -59,17 +59,48 @@ Examples:
 - `W 58% left · ~2d`
 - `5h 25% / W 42%`
 
+Use the dedicated standard-footer command to switch between Pi's default layout and a custom set of fields:
+
+```txt
+/chatgpt-limit-footer
+```
+
+It can independently show or hide the working directory, Git branch, session name, input/output/total/cache tokens, cost, subscription marker, context usage, provider, model, and thinking level. **Total tokens** is `input + output`; cache reads and cache writes are never included.
+
+For example, enable only **Total tokens** and **Context usage** in Custom mode for a compact statistics line:
+
+```txt
+T35k 4.2%/272k
+```
+
 Settings persist globally in `~/.pi/agent/chatgpt-limit.json`, so the same footer preference applies across pi sessions. The file uses this structure:
 
 ```json
 {
   "quotaWindow": "weekly",
   "displayMode": "used",
-  "footerPosition": "second"
+  "footerPosition": "second",
+  "standardFooter": {
+    "mode": "custom",
+    "workingDirectory": false,
+    "gitBranch": false,
+    "sessionName": false,
+    "inputTokens": false,
+    "outputTokens": false,
+    "totalTokens": true,
+    "cacheReadTokens": false,
+    "cacheWriteTokens": false,
+    "cost": false,
+    "subscriptionMarker": false,
+    "contextUsage": true,
+    "provider": false,
+    "model": false,
+    "thinkingLevel": false
+  }
 }
 ```
 
-Set `footerPosition` to `first`, `second`, or `third`. Invalid or missing values fall back to `second`.
+Set `footerPosition` to `first`, `second`, or `third`. Missing or invalid settings fall back to the standard Pi-style footer. Selecting **Reset to Pi defaults** restores the canonical field set regardless of previous custom toggles.
 
 ## Notes
 

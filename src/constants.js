@@ -9,11 +9,52 @@ export const WEEK_SECONDS = 7 * 24 * 60 * 60
 export const CONFIG_ENTRY_TYPE = "chatgpt-limit-config"
 export const CONFIG_FILE_NAME = "chatgpt-limit.json"
 
+export const DEFAULT_STANDARD_FOOTER_CONFIG = {
+  mode: "default",
+  workingDirectory: true,
+  gitBranch: true,
+  sessionName: true,
+  inputTokens: true,
+  outputTokens: true,
+  totalTokens: false,
+  cacheReadTokens: true,
+  cacheWriteTokens: true,
+  cost: true,
+  subscriptionMarker: true,
+  contextUsage: true,
+  provider: true,
+  model: true,
+  thinkingLevel: true,
+}
+
 export const DEFAULT_FOOTER_CONFIG = {
   quotaWindow: "weekly",
   displayMode: "used",
   footerPosition: "second",
+  standardFooter: { ...DEFAULT_STANDARD_FOOTER_CONFIG },
 }
+
+export const STANDARD_FOOTER_MODE_OPTIONS = [
+  { label: "Default", value: "default" },
+  { label: "Custom", value: "custom" },
+]
+
+export const STANDARD_FOOTER_FIELD_OPTIONS = [
+  { label: "Working directory", value: "workingDirectory" },
+  { label: "Git branch", value: "gitBranch" },
+  { label: "Session name", value: "sessionName" },
+  { label: "Input tokens", value: "inputTokens" },
+  { label: "Output tokens", value: "outputTokens" },
+  { label: "Total tokens", value: "totalTokens" },
+  { label: "Cache read tokens", value: "cacheReadTokens" },
+  { label: "Cache write tokens", value: "cacheWriteTokens" },
+  { label: "Cost", value: "cost" },
+  { label: "Subscription marker", value: "subscriptionMarker" },
+  { label: "Context usage", value: "contextUsage" },
+  { label: "Provider", value: "provider" },
+  { label: "Model", value: "model" },
+  { label: "Thinking level", value: "thinkingLevel" },
+]
 
 export const QUOTA_WINDOW_OPTIONS = [
   { label: "Weekly usage (default)", value: "weekly" },

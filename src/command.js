@@ -2,9 +2,12 @@ import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui"
 
 import {
   DEFAULT_FOOTER_CONFIG,
+  DEFAULT_STANDARD_FOOTER_CONFIG,
   DISPLAY_MODE_OPTIONS,
   FOOTER_POSITION_OPTIONS,
   QUOTA_WINDOW_OPTIONS,
+  STANDARD_FOOTER_FIELD_OPTIONS,
+  STANDARD_FOOTER_MODE_OPTIONS,
 } from "./constants.js"
 import {
   describeFooterConfig,
@@ -178,8 +181,100 @@ async function resetFooterConfig(ctx, state) {
   )
   if (!confirmed) return
 
-  await saveFooterConfig(state, DEFAULT_FOOTER_CONFIG)
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    quotaWindow: DEFAULT_FOOTER_CONFIG.quotaWindow,
+    displayMode: DEFAULT_FOOTER_CONFIG.displayMode,
+    footerPosition: DEFAULT_FOOTER_CONFIG.footerPosition,
+  })
   ctx.ui.notify("ChatGPT footer settings reset to defaults.", "info")
+}
+
+async function configureStandardFooterMode(ctx, state) {
+  const currentMode = state.footerConfig.standardFooter.mode
+  const labels = STANDARD_FOOTER_MODE_OPTIONS.map(
+    (option) =>
+      `${option.label}${option.value === currentMode ? " (current)" : ""}`,
+  )
+  const selectedLabel = await ctx.ui.select("Footer mode", labels)
+  const selected = STANDARD_FOOTER_MODE_OPTIONS[labels.indexOf(selectedLabel)]
+  if (!selected) return
+
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    standardFooter: {
+      ...state.footerConfig.standardFooter,
+      mode: selected.value,
+    },
+  })
+  ctx.ui.notify(`Standard footer mode: ${selected.label}`, "info")
+}
+
+async function configureStandardFooterFields(ctx, state) {
+  const standardFooter = state.footerConfig.standardFooter
+  const labels = STANDARD_FOOTER_FIELD_OPTIONS.map((option) => {
+    const enabled =
+      standardFooter.mode === "default"
+        ? DEFAULT_STANDARD_FOOTER_CONFIG[option.value]
+        : standardFooter[option.value]
+    return `${option.label}: ${enabled ? "enabled" : "disabled"}`
+  })
+  const selectedLabel = await ctx.ui.select("Standard footer fields", labels)
+  const selected = STANDARD_FOOTER_FIELD_OPTIONS[labels.indexOf(selectedLabel)]
+  if (!selected) return
+
+  const currentValue =
+    standardFooter.mode === "default"
+      ? DEFAULT_STANDARD_FOOTER_CONFIG[selected.value]
+      : standardFooter[selected.value]
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    standardFooter: {
+      ...standardFooter,
+      mode: "custom",
+      [selected.value]: !currentValue,
+    },
+  })
+  ctx.ui.notify(
+    `${selected.label}: ${currentValue ? "disabled" : "enabled"} (custom mode)`,
+    "info",
+  )
+}
+
+async function resetStandardFooterConfig(ctx, state) {
+  const confirmed = await ctx.ui.confirm(
+    "Reset standard footer to Pi defaults?",
+    "This restores every standard footer field and switches to Default mode.",
+  )
+  if (!confirmed) return
+
+  await saveFooterConfig(state, {
+    ...state.footerConfig,
+    standardFooter: { ...DEFAULT_STANDARD_FOOTER_CONFIG },
+  })
+  ctx.ui.notify("Standard footer reset to Pi defaults.", "info")
+}
+
+export function registerChatGptLimitFooterCommand(pi, state) {
+  pi.registerCommand("chatgpt-limit-footer", {
+    description: "Configure standard Pi footer fields",
+    handler: async (_args, ctx) => {
+      const mode = state.footerConfig.standardFooter.mode
+      const action = await ctx.ui.select("ChatGPT limit standard footer", [
+        `Footer mode (${mode === "default" ? "Default" : "Custom"})`,
+        "Standard footer fields",
+        "Reset to Pi defaults",
+      ])
+
+      if (action?.startsWith("Footer mode")) {
+        await configureStandardFooterMode(ctx, state)
+      } else if (action === "Standard footer fields") {
+        await configureStandardFooterFields(ctx, state)
+      } else if (action === "Reset to Pi defaults") {
+        await resetStandardFooterConfig(ctx, state)
+      }
+    },
+  })
 }
 
 export function registerChatGptLimitCommand(pi, state, queueUpdate) {

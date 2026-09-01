@@ -6,11 +6,30 @@ import {
   CONFIG_ENTRY_TYPE,
   CONFIG_FILE_NAME,
   DEFAULT_FOOTER_CONFIG,
+  DEFAULT_STANDARD_FOOTER_CONFIG,
   DISPLAY_MODE_OPTIONS,
   FOOTER_POSITION_OPTIONS,
   QUOTA_WINDOW_OPTIONS,
+  STANDARD_FOOTER_FIELD_OPTIONS,
+  STANDARD_FOOTER_MODE_OPTIONS,
 } from "./constants.js"
 import { asRecord } from "./records.js"
+
+export function normalizeStandardFooterConfig(value) {
+  const record = asRecord(value)
+  const rawMode = record?.mode
+  const mode = STANDARD_FOOTER_MODE_OPTIONS.some(
+    (option) => option.value === rawMode,
+  )
+    ? rawMode
+    : DEFAULT_STANDARD_FOOTER_CONFIG.mode
+
+  const config = { ...DEFAULT_STANDARD_FOOTER_CONFIG, mode }
+  for (const { value: field } of STANDARD_FOOTER_FIELD_OPTIONS) {
+    if (typeof record?.[field] === "boolean") config[field] = record[field]
+  }
+  return config
+}
 
 export function normalizeFooterConfig(value) {
   const record = asRecord(value)
@@ -35,7 +54,9 @@ export function normalizeFooterConfig(value) {
       ? rawFooterPosition
       : DEFAULT_FOOTER_CONFIG.footerPosition
 
-  return { quotaWindow, displayMode, footerPosition }
+  const standardFooter = normalizeStandardFooterConfig(record?.standardFooter)
+
+  return { quotaWindow, displayMode, footerPosition, standardFooter }
 }
 
 function getConfigPath() {
@@ -68,7 +89,7 @@ export async function restoreFooterConfig(ctx, state) {
 }
 
 function restoreLegacySessionFooterConfig(ctx) {
-  let config = { ...DEFAULT_FOOTER_CONFIG }
+  let config = normalizeFooterConfig(DEFAULT_FOOTER_CONFIG)
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type === "custom" && entry.customType === CONFIG_ENTRY_TYPE) {
       config = normalizeFooterConfig(entry.data)
