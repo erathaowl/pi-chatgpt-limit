@@ -6,11 +6,77 @@ It displays configurable ChatGPT Pro/Codex usage next to the active Codex model,
 
 ## Preview
 
-![Footer preview](https://github.com/patlux/pi-chatgpt-limit/releases/download/preview-assets/footer-preview.png)
+Example footer with the default weekly quota display:
 
-Footer display variants and color thresholds:
+```txt
+~/project (main)
+T35k 4.2%/272k                    gpt-5.5 • W 42%
+```
 
-![Footer display variants and color thresholds](https://github.com/patlux/pi-chatgpt-limit/releases/download/preview-assets/footer-variants-readable.png)
+### Quota windows
+
+| Setting | Footer example |
+| --- | --- |
+| Weekly usage (default) | `W 42%` |
+| 5-hour usage | `5h 25%` |
+| Both | `5h 25% / W 42%` |
+| Hidden | No quota information |
+
+### Display modes
+
+| Mode | Example |
+| --- | --- |
+| Used percent | `W 42%` |
+| Used percent with reset | `W 42% · ~2d` |
+| Pace percent with state | `WP 13% (reserve)` |
+| Pace percent | `WP -13%` |
+| Pace percent with reset | `WP -13% · ~2d` |
+| Remaining percent | `W 58% left` |
+| Remaining percent with reset | `W 58% left · ~2d` |
+
+Pace modes apply to the weekly quota. When both quota windows are displayed, the 5-hour window continues to show its used percentage:
+
+```txt
+5h 25% / WP -13%
+```
+
+### Footer position
+
+Quota information can be placed on any of the three footer lines.
+
+**First line**
+
+```txt
+~/project (main)                               W 42%
+T35k 4.2%/272k                              gpt-5.5
+```
+
+**Second line (default)**
+
+```txt
+~/project (main)
+T35k 4.2%/272k                    gpt-5.5 • W 42%
+```
+
+**Third line**
+
+```txt
+~/project (main)
+T35k 4.2%/272k                              gpt-5.5
+                                                W 42%
+```
+
+### Usage color thresholds
+
+Quota colors are based on the percentage already used:
+
+| Usage | Theme color |
+| ---: | --- |
+| `< 80%` | `dim` |
+| `80–89%` | `warning` |
+| `90–100%` | `error` |
+
+The same thresholds apply regardless of whether the displayed value uses used, remaining, reset, or pace formatting.
 
 ## Install
 
@@ -47,7 +113,7 @@ This shows:
 The `/chatgpt-limit` menu configures the ChatGPT quota display:
 
 - show weekly usage (default), 5-hour usage, both, or hide usage
-- show used percent, used percent with reset, remaining percent, or remaining percent with reset
+- show used percent, used percent with reset, pace, remaining percent, or reset-aware variants
 - place usage right-aligned on the first line, right-aligned on the second line (default), or right-aligned on a new third line
 - reset footer settings to defaults
 
@@ -55,6 +121,9 @@ Examples:
 
 - `W 42%`
 - `W 42% · ~2d`
+- `WP 13% (reserve)`
+- `WP -13%`
+- `WP -13% · ~2d`
 - `W 58% left`
 - `W 58% left · ~2d`
 - `5h 25% / W 42%`
