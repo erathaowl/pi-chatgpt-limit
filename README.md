@@ -280,3 +280,14 @@ See [RELEASE.md](https://github.com/erathaowl/pi-chatgpt-limit/blob/main/RELEASE
 ## License
 
 MIT
+
+## About this fork
+
+This package is a fork of
+[patlux/pi-chatgpt-limit](https://github.com/patlux/pi-chatgpt-limit).
+
+It includes additional features and changes maintained independently under
+the `@erathaowl` npm scope.
+
+The original project is Copyright © its original authors and is distributed
+under the MIT License.

@@ -1,5 +1,8 @@
 {
-  "name": "pi-chatgpt-limit",
+  "name": "@erathaowl/pi-chatgpt-limit",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.3.4",
   "description": "Show ChatGPT Codex subscription usage in pi's footer",
   "type": "module",
@@ -21,11 +24,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patlux/pi-chatgpt-limit.git"
+    "url": "git+https://github.com/erathaowl/pi-chatgpt-limit.git"
   },
-  "homepage": "https://github.com/patlux/pi-chatgpt-limit#readme",
+  "homepage": "https://github.com/erathaowl/pi-chatgpt-limit#readme",
   "bugs": {
-    "url": "https://github.com/patlux/pi-chatgpt-limit/issues"
+    "url": "https://github.com/erathaowl/pi-chatgpt-limit/issues"
   },
   "files": [
     "index.js",
@@ -41,7 +44,6 @@
   "pi": {
     "extensions": [
       "./index.js"
-    ],
-    "image": "https://github.com/patlux/pi-chatgpt-limit/releases/download/preview-assets/footer-preview.png"
+    ]
   }
 }
