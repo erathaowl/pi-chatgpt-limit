@@ -100,7 +100,7 @@ For details, run `/chatgpt-limit` and choose **Show current usage details**, or 
 /chatgpt-limit-usage
 ```
 
-The direct command returns focus to the prompt immediately. The details include:
+The direct command prints details in the terminal's normal foreground (rather than dim gray) and returns focus to the prompt immediately. The details include:
 
 - plan
 - account email when available

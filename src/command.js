@@ -435,7 +435,14 @@ export function registerChatGptLimitUsageCommand(pi, state, queueUpdate) {
     description: "Print current ChatGPT Codex usage details",
     handler: async (_args, ctx) => {
       const details = await loadUsageDetails(ctx, state, queueUpdate)
-      if (details) ctx.ui.notify(details.join("\n"), "info")
+      if (details) {
+        // Pi renders info notifications in dim; restore the terminal's normal foreground.
+        const lines =
+          ctx.mode === "tui"
+            ? details.map((line) => `\x1b[22;39m${line}`)
+            : details
+        ctx.ui.notify(lines.join("\n"), "info")
+      }
     },
   })
 }

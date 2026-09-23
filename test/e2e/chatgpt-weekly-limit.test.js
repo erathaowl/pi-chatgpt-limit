@@ -1433,6 +1433,8 @@ send "/chatgpt-limit\\r"
 ${expectBlock("Configure footer display mode")}`,
     })
     assert.match(stripAnsi(output), /5-hour: 25% used, 75% left/)
+    assert.match(output, /\x1b\[22;39mprovider: openai-codex/)
+    assert.match(output, /\x1b\[22;39mweekly: 42% used/)
     assert.ok(server.requests.length > 0)
   } finally {
     await server.close()
@@ -1450,17 +1452,19 @@ test("usage command prints the same freshly loaded details as the menu without s
     fetchedAt: Date.now(),
   }
   const ctx = {
+    mode: "tui",
     model: { provider: "openai-codex" },
     ui: {
       notify(message, type) {
         assert.equal(type, "info")
+        const details = buildUsageDetails(
+          snapshot,
+          "openai-codex",
+          describeFooterConfig(config),
+        )
         assert.equal(
           message,
-          buildUsageDetails(
-            snapshot,
-            "openai-codex",
-            describeFooterConfig(config),
-          ).join("\n"),
+          details.map((line) => `\x1b[22;39m${line}`).join("\n"),
         )
       },
       select: () => assert.fail("usage command should not open a menu"),
@@ -1483,6 +1487,21 @@ test("usage command prints the same freshly loaded details as the menu without s
   )
   await handler("", ctx)
   assert.equal(refreshCount, 1)
+
+  ctx.mode = "rpc"
+  ctx.ui.notify = (message, type) => {
+    assert.equal(type, "info")
+    assert.equal(
+      message,
+      buildUsageDetails(
+        snapshot,
+        "openai-codex",
+        describeFooterConfig(config),
+      ).join("\n"),
+    )
+  }
+  await handler("", ctx)
+  assert.equal(refreshCount, 2)
 })
 
 test("usage command reports unavailable provider and failed refresh without opening a menu", async () => {
