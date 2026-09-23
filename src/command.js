@@ -408,6 +408,38 @@ export function registerChatGptLimitFooterCommand(pi, state) {
   })
 }
 
+async function loadUsageDetails(ctx, state, queueUpdate) {
+  if (!isOpenAICodexProvider(ctx.model?.provider)) {
+    ctx.ui.notify(
+      "ChatGPT limits are only available for openai-codex models.",
+      "info",
+    )
+    return
+  }
+
+  const snapshot = await queueUpdate(ctx)
+  if (!snapshot) {
+    ctx.ui.notify("Could not load ChatGPT usage limits.", "warning")
+    return
+  }
+
+  return buildUsageDetails(
+    snapshot,
+    ctx.model?.provider,
+    describeFooterConfig(state.footerConfig),
+  )
+}
+
+export function registerChatGptLimitUsageCommand(pi, state, queueUpdate) {
+  pi.registerCommand("chatgpt-limit-usage", {
+    description: "Print current ChatGPT Codex usage details",
+    handler: async (_args, ctx) => {
+      const details = await loadUsageDetails(ctx, state, queueUpdate)
+      if (details) ctx.ui.notify(details.join("\n"), "info")
+    },
+  })
+}
+
 export function registerChatGptLimitCommand(pi, state, queueUpdate) {
   pi.registerCommand("chatgpt-limit", {
     description: "Show ChatGPT Codex 5-hour and weekly usage limits",
@@ -442,28 +474,8 @@ export function registerChatGptLimitCommand(pi, state, queueUpdate) {
 
       if (!action) return
 
-      if (!isOpenAICodexProvider(ctx.model?.provider)) {
-        ctx.ui.notify(
-          "ChatGPT limits are only available for openai-codex models.",
-          "info",
-        )
-        return
-      }
-
-      const snapshot = await queueUpdate(ctx)
-      if (!snapshot) {
-        ctx.ui.notify("Could not load ChatGPT usage limits.", "warning")
-        return
-      }
-
-      await ctx.ui.select(
-        "ChatGPT Codex usage limits",
-        buildUsageDetails(
-          snapshot,
-          ctx.model?.provider,
-          describeFooterConfig(state.footerConfig),
-        ),
-      )
+      const details = await loadUsageDetails(ctx, state, queueUpdate)
+      if (details) await ctx.ui.select("ChatGPT Codex usage limits", details)
     },
   })
 }

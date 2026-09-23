@@ -2,6 +2,7 @@ import { DEFAULT_FOOTER_CONFIG } from "./constants.js"
 import {
   registerChatGptLimitCommand,
   registerChatGptLimitFooterCommand,
+  registerChatGptLimitUsageCommand,
 } from "./command.js"
 import { restoreFooterConfig } from "./config.js"
 import { syncFooter } from "./footer.js"
@@ -55,5 +56,6 @@ export default function (pi) {
   })
 
   registerChatGptLimitCommand(pi, state, queueUpdate)
+  registerChatGptLimitUsageCommand(pi, state, queueUpdate)
   registerChatGptLimitFooterCommand(pi, state)
 }

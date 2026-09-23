@@ -8,18 +8,26 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 
-import { normalizeFooterConfig, restoreFooterConfig } from "../../src/config.js"
+import {
+  describeFooterConfig,
+  normalizeFooterConfig,
+  restoreFooterConfig,
+} from "../../src/config.js"
 import {
   DEFAULT_STANDARD_FOOTER_CONFIG,
   STANDARD_FOOTER_FIELD_OPTIONS,
 } from "../../src/constants.js"
-import { registerChatGptLimitFooterCommand } from "../../src/command.js"
+import {
+  registerChatGptLimitFooterCommand,
+  registerChatGptLimitUsageCommand,
+} from "../../src/command.js"
 import extension from "../../src/extension.js"
 import {
   installFooter,
   shouldUseCustomFooter,
   syncFooter,
 } from "../../src/footer.js"
+import { buildUsageDetails } from "../../src/usage.js"
 
 const EXTENSION_PATH = resolve("index.js")
 
@@ -1396,6 +1404,116 @@ ${expectBlock("gpt-5.5")}`,
   } finally {
     await server.close()
   }
+})
+
+test("usage command prints details without selecting and returns focus to the prompt", async () => {
+  const token = fakeJwt({
+    "https://api.openai.com/auth": { chatgpt_account_id: "acct_usage" },
+    "https://api.openai.com/profile": { email: "user@example.com" },
+  })
+  const server = await startUsageServer((_req, res) => {
+    sendUsageResponse(res, { planType: "pro" })
+  })
+
+  try {
+    const output = await runRealPiTuiExpect({
+      baseUrl: server.baseUrl,
+      apiKey: token,
+      command: "/chatgpt-limit-usage",
+      scriptBody: `${expectBlock("provider: openai-codex")}
+${expectBlock("plan: pro")}
+${expectBlock("email: user@example.com")}
+${expectBlock("5-hour: 25% used, 75% left")}
+${expectBlock("weekly: 42% used, 58% left")}
+${expectBlock("pace:")}
+${expectBlock("fetched:")}
+${expectBlock("footer:")}
+${expectBlock("endpoint:")}
+send "/chatgpt-limit\\r"
+${expectBlock("Configure footer display mode")}`,
+    })
+    assert.match(stripAnsi(output), /5-hour: 25% used, 75% left/)
+    assert.ok(server.requests.length > 0)
+  } finally {
+    await server.close()
+  }
+})
+
+test("usage command prints the same freshly loaded details as the menu without selecting", async () => {
+  let handler
+  const config = normalizeFooterConfig({})
+  const snapshot = {
+    planType: "pro",
+    email: "user@example.com",
+    fiveHour: { usedPercent: 25, resetAt: Date.now() + 3600000 },
+    weekly: { usedPercent: 42, resetAt: Date.now() + 86400000 },
+    fetchedAt: Date.now(),
+  }
+  const ctx = {
+    model: { provider: "openai-codex" },
+    ui: {
+      notify(message, type) {
+        assert.equal(type, "info")
+        assert.equal(
+          message,
+          buildUsageDetails(
+            snapshot,
+            "openai-codex",
+            describeFooterConfig(config),
+          ).join("\n"),
+        )
+      },
+      select: () => assert.fail("usage command should not open a menu"),
+    },
+  }
+  let refreshCount = 0
+  registerChatGptLimitUsageCommand(
+    {
+      registerCommand(name, command) {
+        assert.equal(name, "chatgpt-limit-usage")
+        handler = command.handler
+      },
+    },
+    { footerConfig: config },
+    async (receivedCtx) => {
+      assert.equal(receivedCtx, ctx)
+      refreshCount++
+      return snapshot
+    },
+  )
+  await handler("", ctx)
+  assert.equal(refreshCount, 1)
+})
+
+test("usage command reports unavailable provider and failed refresh without opening a menu", async () => {
+  let handler
+  registerChatGptLimitUsageCommand(
+    { registerCommand: (_name, command) => (handler = command.handler) },
+    { footerConfig: normalizeFooterConfig({}) },
+    async () => undefined,
+  )
+  const notifications = []
+  const ctx = {
+    model: { provider: "other" },
+    ui: {
+      notify: (message, type) => notifications.push({ message, type }),
+      select: () => assert.fail("usage command should not open a menu"),
+    },
+  }
+  await handler("", ctx)
+  assert.deepEqual(notifications, [
+    {
+      message: "ChatGPT limits are only available for openai-codex models.",
+      type: "info",
+    },
+  ])
+
+  ctx.model.provider = "openai-codex"
+  await handler("", ctx)
+  assert.deepEqual(notifications[1], {
+    message: "Could not load ChatGPT usage limits.",
+    type: "warning",
+  })
 })
 
 test("real pi TUI renders the ChatGPT weekly percentage in the footer", async () => {

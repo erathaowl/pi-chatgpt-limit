@@ -15,23 +15,23 @@ T35k 4.2%/272k                    gpt-5.5 • W 42%
 
 ### Quota windows
 
-| Setting | Footer example |
-| --- | --- |
-| Weekly usage (default) | `W 42%` |
-| 5-hour usage | `5h 25%` |
-| Both | `5h 25% / W 42%` |
-| Hidden | No quota information |
+| Setting                | Footer example       |
+| ---------------------- | -------------------- |
+| Weekly usage (default) | `W 42%`              |
+| 5-hour usage           | `5h 25%`             |
+| Both                   | `5h 25% / W 42%`     |
+| Hidden                 | No quota information |
 
 ### Display modes
 
-| Mode | Example |
-| --- | --- |
-| Used percent | `W 42%` |
-| Used percent with reset | `W 42% · ~2d` |
-| Pace percent with state | `WP 13% (reserve)` |
-| Pace percent | `WP -13%` |
-| Pace percent with reset | `WP -13% · ~2d` |
-| Remaining percent | `W 58% left` |
+| Mode                         | Example            |
+| ---------------------------- | ------------------ |
+| Used percent                 | `W 42%`            |
+| Used percent with reset      | `W 42% · ~2d`      |
+| Pace percent with state      | `WP 13% (reserve)` |
+| Pace percent                 | `WP -13%`          |
+| Pace percent with reset      | `WP -13% · ~2d`    |
+| Remaining percent            | `W 58% left`       |
 | Remaining percent with reset | `W 58% left · ~2d` |
 
 Pace modes apply to the weekly quota. When both quota windows are displayed, the 5-hour window continues to show its used percentage:
@@ -70,11 +70,11 @@ T35k 4.2%/272k                              gpt-5.5
 
 Quota colors are based on the percentage already used:
 
-| Usage | Theme color |
-| ---: | --- |
-| `< 80%` | `dim` |
-| `80–89%` | `warning` |
-| `90–100%` | `error` |
+|     Usage | Theme color |
+| --------: | ----------- |
+|   `< 80%` | `dim`       |
+|  `80–89%` | `warning`   |
+| `90–100%` | `error`     |
 
 The same thresholds apply regardless of whether the displayed value uses used, remaining, reset, or pace formatting.
 
@@ -94,13 +94,13 @@ Then reload pi:
 
 The footer percentage appears only while using an `openai-codex` model authenticated via pi's `/login` flow.
 
-For details, run:
+For details, run `/chatgpt-limit` and choose **Show current usage details**, or print the same details directly without opening a menu:
 
 ```txt
-/chatgpt-limit
+/chatgpt-limit-usage
 ```
 
-This shows:
+The direct command returns focus to the prompt immediately. The details include:
 
 - plan
 - account email when available
