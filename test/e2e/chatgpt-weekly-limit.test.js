@@ -1434,9 +1434,9 @@ ${expectBlock("Configure footer display mode")}`,
     })
     assert.match(stripAnsi(output), /5-hour: 25% used, 75% left/)
     assert.doesNotMatch(output, /\x1b\[22;39mprovider: openai-codex/)
-    assert.match(output, /\x1b\[22;39m5-hour: 25% used/)
-    assert.match(output, /\x1b\[22;39mweekly: 42% used/)
-    assert.match(output, /\x1b\[22;39mpace:/)
+    assert.match(output, /\x1b\[22;37m5-hour: 25% used/)
+    assert.match(output, /\x1b\[22;37mweekly: 42% used/)
+    assert.match(output, /\x1b\[22;37mpace:/)
     assert.ok(server.requests.length > 0)
   } finally {
     await server.close()
@@ -1473,10 +1473,12 @@ test("usage command prints the same freshly loaded details as the menu without s
               if (line.startsWith("5-hour: ") || line.startsWith("weekly: ")) {
                 const color =
                   expectedColors[line.startsWith("5-hour: ") ? 0 : 1]
-                return `\x1b[22;39m${color ? `<${color}>${line}</${color}>` : line}`
+                return color
+                  ? `\x1b[22;39m<${color}>${line}</${color}>`
+                  : `\x1b[22;37m${line}`
               }
               return line.startsWith("pace: ")
-                ? `\x1b[22;39m${line}`
+                ? `\x1b[22;37m${line}`
                 : `<dim>${line}</dim>`
             })
             .join("\n"),

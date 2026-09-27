@@ -450,10 +450,12 @@ export function registerChatGptLimitUsageCommand(pi, state, queueUpdate) {
               ? details.snapshot.fiveHour
               : details.snapshot.weekly
             const color = getUsageColor(window)
-            return `\x1b[22;39m${color ? ctx.ui.theme.fg(color, line) : line}`
+            return color
+              ? `\x1b[22;39m${ctx.ui.theme.fg(color, line)}`
+              : `\x1b[22;37m${line}`
           }
           return line.startsWith("pace: ")
-            ? `\x1b[22;39m${line}`
+            ? `\x1b[22;37m${line}`
             : ctx.ui.theme.fg("dim", line)
         })
         ctx.ui.notify(lines.join("\n"), "info")

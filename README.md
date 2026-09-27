@@ -100,7 +100,7 @@ For details, run `/chatgpt-limit` and choose **Show current usage details**, or 
 /chatgpt-limit-usage
 ```
 
-The direct command prints account and metadata details dimmed, while the 5-hour and weekly limits use the normal foreground or the footer's warning/error colors at 80%/90% usage. The pace row uses the normal foreground. The command returns focus to the prompt immediately. The details include:
+The direct command prints account and metadata details dimmed, while the 5-hour and weekly limits use white or the footer's warning/error colors at 80%/90% usage. The pace row uses white. The command returns focus to the prompt immediately. The details include:
 
 - plan
 - account email when available
