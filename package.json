@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Show ChatGPT Codex subscription usage in pi's footer",
   "type": "module",
   "scripts": {
