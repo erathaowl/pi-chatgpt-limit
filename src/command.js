@@ -16,6 +16,7 @@ import {
 } from "./config.js"
 import { isOpenAICodexProvider } from "./auth.js"
 import { syncFooter } from "./footer.js"
+import { getUsageColor } from "./format.js"
 import { buildUsageDetails } from "./usage.js"
 
 async function selectFooterConfigOption(
@@ -423,11 +424,14 @@ async function loadUsageDetails(ctx, state, queueUpdate) {
     return
   }
 
-  return buildUsageDetails(
+  return {
+    lines: buildUsageDetails(
+      snapshot,
+      ctx.model?.provider,
+      describeFooterConfig(state.footerConfig),
+    ),
     snapshot,
-    ctx.model?.provider,
-    describeFooterConfig(state.footerConfig),
-  )
+  }
 }
 
 export function registerChatGptLimitUsageCommand(pi, state, queueUpdate) {
@@ -436,11 +440,22 @@ export function registerChatGptLimitUsageCommand(pi, state, queueUpdate) {
     handler: async (_args, ctx) => {
       const details = await loadUsageDetails(ctx, state, queueUpdate)
       if (details) {
-        // Pi renders info notifications in dim; restore the terminal's normal foreground.
-        const lines =
-          ctx.mode === "tui"
-            ? details.map((line) => `\x1b[22;39m${line}`)
-            : details
+        const lines = details.lines.map((line) => {
+          if (ctx.mode !== "tui") return line
+
+          const isFiveHour = line.startsWith("5-hour: ")
+          const isWeekly = line.startsWith("weekly: ")
+          if (isFiveHour || isWeekly) {
+            const window = isFiveHour
+              ? details.snapshot.fiveHour
+              : details.snapshot.weekly
+            const color = getUsageColor(window)
+            return `\x1b[22;39m${color ? ctx.ui.theme.fg(color, line) : line}`
+          }
+          return line.startsWith("pace: ")
+            ? `\x1b[22;39m${line}`
+            : ctx.ui.theme.fg("dim", line)
+        })
         ctx.ui.notify(lines.join("\n"), "info")
       }
     },
@@ -482,7 +497,8 @@ export function registerChatGptLimitCommand(pi, state, queueUpdate) {
       if (!action) return
 
       const details = await loadUsageDetails(ctx, state, queueUpdate)
-      if (details) await ctx.ui.select("ChatGPT Codex usage limits", details)
+      if (details)
+        await ctx.ui.select("ChatGPT Codex usage limits", details.lines)
     },
   })
 }

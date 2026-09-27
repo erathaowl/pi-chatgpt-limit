@@ -1433,8 +1433,10 @@ send "/chatgpt-limit\\r"
 ${expectBlock("Configure footer display mode")}`,
     })
     assert.match(stripAnsi(output), /5-hour: 25% used, 75% left/)
-    assert.match(output, /\x1b\[22;39mprovider: openai-codex/)
+    assert.doesNotMatch(output, /\x1b\[22;39mprovider: openai-codex/)
+    assert.match(output, /\x1b\[22;39m5-hour: 25% used/)
     assert.match(output, /\x1b\[22;39mweekly: 42% used/)
+    assert.match(output, /\x1b\[22;39mpace:/)
     assert.ok(server.requests.length > 0)
   } finally {
     await server.close()
@@ -1444,17 +1446,19 @@ ${expectBlock("Configure footer display mode")}`,
 test("usage command prints the same freshly loaded details as the menu without selecting", async () => {
   let handler
   const config = normalizeFooterConfig({})
-  const snapshot = {
+  let snapshot = {
     planType: "pro",
     email: "user@example.com",
     fiveHour: { usedPercent: 25, resetAt: Date.now() + 3600000 },
     weekly: { usedPercent: 42, resetAt: Date.now() + 86400000 },
     fetchedAt: Date.now(),
   }
+  let expectedColors = [undefined, undefined]
   const ctx = {
     mode: "tui",
     model: { provider: "openai-codex" },
     ui: {
+      theme: { fg: (color, line) => `<${color}>${line}</${color}>` },
       notify(message, type) {
         assert.equal(type, "info")
         const details = buildUsageDetails(
@@ -1464,7 +1468,18 @@ test("usage command prints the same freshly loaded details as the menu without s
         )
         assert.equal(
           message,
-          details.map((line) => `\x1b[22;39m${line}`).join("\n"),
+          details
+            .map((line) => {
+              if (line.startsWith("5-hour: ") || line.startsWith("weekly: ")) {
+                const color =
+                  expectedColors[line.startsWith("5-hour: ") ? 0 : 1]
+                return `\x1b[22;39m${color ? `<${color}>${line}</${color}>` : line}`
+              }
+              return line.startsWith("pace: ")
+                ? `\x1b[22;39m${line}`
+                : `<dim>${line}</dim>`
+            })
+            .join("\n"),
         )
       },
       select: () => assert.fail("usage command should not open a menu"),
@@ -1488,6 +1503,20 @@ test("usage command prints the same freshly loaded details as the menu without s
   await handler("", ctx)
   assert.equal(refreshCount, 1)
 
+  snapshot = {
+    ...snapshot,
+    fiveHour: { ...snapshot.fiveHour, usedPercent: 80 },
+    weekly: { ...snapshot.weekly, usedPercent: 90 },
+  }
+  expectedColors = ["warning", "error"]
+  await handler("", ctx)
+  assert.equal(refreshCount, 2)
+
+  snapshot = { ...snapshot, fiveHour: undefined, weekly: undefined }
+  expectedColors = [undefined, undefined]
+  await handler("", ctx)
+  assert.equal(refreshCount, 3)
+
   ctx.mode = "rpc"
   ctx.ui.notify = (message, type) => {
     assert.equal(type, "info")
@@ -1501,7 +1530,7 @@ test("usage command prints the same freshly loaded details as the menu without s
     )
   }
   await handler("", ctx)
-  assert.equal(refreshCount, 2)
+  assert.equal(refreshCount, 4)
 })
 
 test("usage command reports unavailable provider and failed refresh without opening a menu", async () => {

@@ -9,6 +9,7 @@ import {
   formatResetShort,
   formatTokens,
   formatUsedPercent,
+  getUsageColor,
 } from "./format.js"
 
 /** @param {import('@earendil-works/pi-ai').AssistantMessage['usage']} usage */
@@ -18,13 +19,6 @@ function addUsage(total, usage) {
   total.cacheRead += usage?.cacheRead ?? 0
   total.cacheWrite += usage?.cacheWrite ?? 0
   total.cost += usage?.cost?.total ?? 0
-}
-
-function getUsageColor(window) {
-  const used = Math.max(0, Math.min(100, window?.usedPercent ?? 0))
-  if (used >= 90) return "error"
-  if (used >= 80) return "warning"
-  return "dim"
 }
 
 function formatFooterUsagePart(state, label, window, theme) {
@@ -53,7 +47,7 @@ function formatFooterUsagePart(state, label, window, theme) {
     }
   }
 
-  return theme.fg(getUsageColor(window), text)
+  return theme.fg(getUsageColor(window) ?? "dim", text)
 }
 
 function formatFooterUsage(state, theme) {

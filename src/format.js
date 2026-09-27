@@ -14,6 +14,14 @@ export function formatUsedPercent(window) {
 }
 
 /** @param {{ usedPercent: number } | undefined} window */
+export function getUsageColor(window) {
+  const used = Math.max(0, Math.min(100, window?.usedPercent ?? 0))
+  if (used >= 90) return "error"
+  if (used >= 80) return "warning"
+  return undefined
+}
+
+/** @param {{ usedPercent: number } | undefined} window */
 export function formatRemainingPercent(window) {
   if (!window) return "?%"
   return `${Math.round(Math.max(0, Math.min(100, 100 - window.usedPercent)))}%`
